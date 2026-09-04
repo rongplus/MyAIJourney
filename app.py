@@ -12,18 +12,16 @@ import gradio as gr
 
 from ollama_client import list_models,chat_stream
 from roundAgent import RoundAgent
+from mylog import log
+
+from myfunctions import get_default_model, _to_text, change_agent, toolChanged, modelChanged
 
 DEFAULT_SYSTEM_PROMPT = "你是一个乐于助人的 AI 助手，请用中文回答。"
+DEFAULT_AGENNT = "A1"
+
 
 # ---- 创建 RoundAgent 实例 ----
 agent = RoundAgent()
-
-
-def get_default_model(models: list[str]):
-    if not models:
-        return None
-    return "qwen2.5:7b" if "qwen2.5:7b" in models else models[0]
-
 
 def refresh_models():
     """刷新模型列表，返回下拉框更新对象"""
@@ -35,31 +33,6 @@ def clear_chat():
     """清空对话历史 — 同时清空 Gradio UI 和 RoundAgent 的 LangChain 历史"""
     agent.clear_history()
     return [], ""
-
-
-def _to_text(content) -> str:
-    """把 Gradio Chatbot 消息里的 content 统一拍平成纯字符串。
-
-    Gradio 6 的 Chatbot 组件在把历史消息回传给 Python 回调时，content
-    字段有时是 str，有时会被包装成内容片段列表（例如
-    [{"type": "text", "text": "..."}]，用于支持图片/文件等多模态消息）。
-    Ollama 的 /api/chat 接口只接受纯字符串，直接把 list 传过去会报
-    "cannot unmarshal array into ... content of type string"。这里做
-    统一转换，避免这个问题。
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                text = item.get("text")
-                if text:
-                    parts.append(str(text))
-        return "".join(parts)
-    return "" if content is None else str(content)
 
 
 
@@ -173,15 +146,40 @@ with gr.Blocks(title="Ollama Chat") as demo:
                     "且已执行过 `ollama pull <模型名>`，再点击下方「刷新模型列表」。"
                 )
 
-            temperature_slider = gr.Slider(
-                label="Temperature",
-                minimum=0.0, maximum=1.5, value=0.7, step=0.05,
-                info="越高越有创造力，越低越确定保守",
+            temperature_slider = gr.State(0.7)   # 实际值，由弹窗写入
+            top_p_slider = gr.State(0.9)          # 实际值，由弹窗写入
+
+            advance_btn = gr.Button("⚙️ Advance Setting", variant="secondary")
+
+            # ---- Advance Setting 弹出面板（默认隐藏） ----
+            advance_panel = gr.Group(visible=False)
+            with advance_panel:
+                gr.Markdown("### ⚙️ Advance Setting")
+                gr.Markdown("调整模型生成参数，保存后生效。")
+
+                adv_temperature = gr.Slider(
+                    label="Temperature",
+                    minimum=0.0, maximum=1.5, value=0.7, step=0.05,
+                    info="越高越有创造力，越低越确定保守",
+                )
+                adv_top_p = gr.Slider(
+                    label="Top-P",
+                    minimum=0.1, maximum=1.0, value=0.9, step=0.05,
+                    info="核采样阈值，控制候选词范围",
+                )
+
+                with gr.Row():
+                    adv_reset_btn = gr.Button("↩️ 重置默认", variant="secondary")
+                    adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
+            agent_type = gr.Radio(
+                choices=["Code Expert","Travel Guide","Math Tutor","Story Teller"],
+                value="Code Expert",
+                label="Agent 类型",
             )
-            top_p_slider = gr.Slider(
-                label="Top-P",
-                minimum=0.1, maximum=1.0, value=0.9, step=0.05,
-                info="核采样阈值，控制候选词范围",
+            tool_selections = gr.CheckboxGroup(
+                choices=["Email管家","Calendar助手","文件助手"," 搜索专家"],
+                value=[],
+                label="Tool 类型",
             )
 
             system_prompt_box = gr.Textbox(
@@ -211,14 +209,53 @@ with gr.Blocks(title="Ollama Chat") as demo:
             )
 
     # ---- 事件绑定 ----
+    # Advance Setting 弹窗：打开时从 State 读入当前值
+    advance_btn.click(
+        lambda t, p: (gr.update(visible=True), gr.update(value=t), gr.update(value=p)),
+        inputs=[temperature_slider, top_p_slider],
+        outputs=[advance_panel, adv_temperature, adv_top_p],
+    )
+
+    # 保存：把弹窗里的值写回 State 并关闭面板
+    adv_save_btn.click(
+        lambda t, p: (gr.update(visible=False), t, p),
+        inputs=[adv_temperature, adv_top_p],
+        outputs=[advance_panel, temperature_slider, top_p_slider],
+    )
+
+    # 重置默认
+    adv_reset_btn.click(
+        lambda: (gr.update(value=0.7), gr.update(value=0.9)),
+        inputs=None,
+        outputs=[adv_temperature, adv_top_p],
+    )
+
     user_input_box.submit(
-        respond_url, #respondRoundGroup
+        respondRoundGroup, #respond_url, #respondRoundGroup
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, system_prompt_box],
         outputs=[chatbot, user_input_box],
     )
 
     refresh_btn.click(refresh_models, inputs=None, outputs=model_dropdown)
     clear_btn.click(clear_chat, inputs=None, outputs=[chatbot, user_input_box])
+
+    model_dropdown.change(
+        modelChanged,
+        inputs=[model_dropdown],
+        outputs=None,
+    )
+
+    agent_type.change(
+        change_agent,
+        inputs=[agent_type],
+        outputs=[system_prompt_box]
+    )
+
+    tool_selections.change(
+        toolChanged,
+        inputs=[tool_selections],
+        outputs=None
+    )
 
 
 if __name__ == "__main__":
