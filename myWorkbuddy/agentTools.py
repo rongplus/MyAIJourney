@@ -53,6 +53,9 @@ def get_weather(city: str) -> str:
         return f"天气查询失败：{e}"
 
 
+TOOLS = [get_weather]
+
+
 # WMO Weather interpretation codes
 _WMO_CODES = {
     0: "晴", 1: "晴", 2: "多云", 3: "阴",
@@ -68,5 +71,3 @@ _WMO_CODES = {
     95: "雷暴", 96: "雷暴", 99: "雷暴",
 }
 
-# 工具列表
-TOOLS = [get_weather]

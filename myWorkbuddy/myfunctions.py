@@ -5,6 +5,7 @@ import json
 import os
 from typing import Dict, Generator, Optional, List, Any
 from langchain_core.messages import HumanMessage, AIMessage
+from mylog import log
 
 
 def _load_history_file(path: str) -> Dict[str, list]:
