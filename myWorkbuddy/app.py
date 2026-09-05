@@ -13,6 +13,9 @@ import gradio as gr
 from ollama_client import list_models,chat_stream
 from roundAgent import RoundAgent
 from mylog import log
+from gameAgent import run_game_agent_sync
+from graphAgent import run_graph_agent_sync
+from travelAgent import clear_travel_agent_history, run_travel_agent_sync
 
 from myfunctions import get_default_model, _to_text, change_agent, toolChanged, modelChanged
 
@@ -32,7 +35,8 @@ def refresh_models():
 def clear_chat():
     """清空对话历史 — 同时清空 Gradio UI 和 RoundAgent 的 LangChain 历史"""
     agent.clear_history()
-    return [], ""
+    clear_travel_agent_history()
+    return [], "", ""
 
 
 
@@ -43,7 +47,7 @@ def respond_url(user_input, history, model, temperature, top_p, system_prompt):
              [{"role": "user"/"assistant", "content": "..."}, ...]
     """
     if not user_input or not user_input.strip():
-        yield history, ""
+        yield history, "", ""
         return
  
     if not model:
@@ -52,12 +56,12 @@ def respond_url(user_input, history, model, temperature, top_p, system_prompt):
             "role": "assistant",
             "content": "❌ 未检测到可用模型，请确认 Ollama 服务已启动（`ollama serve`）且已 `ollama pull` 至少一个模型，然后点击「刷新模型列表」。",
         }]
-        yield history, ""
+        yield history, "", ""
         return
  
     history = history + [{"role": "user", "content": user_input}]
     history = history + [{"role": "assistant", "content": ""}]
-    yield history, ""
+    yield history, "", ""
  
     # 构建上下文（不包含刚追加的空 assistant 占位）
     context = []
@@ -73,14 +77,59 @@ def respond_url(user_input, history, model, temperature, top_p, system_prompt):
         for chunk in chat_stream(model, context, temperature, top_p):
             full_response += chunk
             history[-1]["content"] = full_response
-            yield history, ""
+            yield history, "", ""
     except Exception as e:
         full_response = f"❌ 请求出错：{e}"
         history[-1]["content"] = full_response
-        yield history, ""
+        yield history, "", "✅ 当前任务已结束"
 
-def respondRoundGroup(user_input, history, model, temperature, top_p, system_prompt):
-    """处理用户输入，通过 RoundAgent.round_stream 流式生成回复
+def respondGameAgent(user_input, history):
+    """处理 Game Agent 请求，并把 AutoGen 团队结果显示在聊天窗口。"""
+    history = history + [{"role": "user", "content": user_input}]
+    history = history + [{"role": "assistant", "content": ""}]
+    yield history, "", ""
+    try:
+        response = run_game_agent_sync(user_input)
+    except Exception as e:
+        response = f"❌ Game Agent 请求出错：{e}"
+    history[-1]["content"] = response
+    yield history, "", "✅ 当前任务已结束"
+
+
+def respondGraphAgent(user_input, history, model, temperature, top_p, system_prompt):
+    """处理 Graph Agent 请求，并把 LangGraph 结果显示在聊天窗口。"""
+    history = history + [{"role": "user", "content": user_input}]
+    history = history + [{"role": "assistant", "content": ""}]
+    yield history, "", ""
+    try:
+        response = run_graph_agent_sync(
+            user_input,
+            model,
+            temperature,
+            top_p,
+            system_prompt or "",
+        )
+    except Exception as e:
+        response = f"❌ Graph Agent 请求出错：{e}"
+    history[-1]["content"] = response
+    yield history, "", "✅ 当前任务已结束"
+
+
+def respondMCPTravel(user_input, history, model):
+    """处理 MCP-Travel 请求，并保留连续旅行对话上下文。"""
+    history = history + [{"role": "user", "content": user_input}]
+    history = history + [{"role": "assistant", "content": ""}]
+    yield history, "", ""
+    try:
+        response = run_travel_agent_sync(user_input, model=model or "gpt-5.4-mini")
+    except Exception as e:
+        response = f"❌ MCP-Travel 请求出错：{e}"
+    history[-1]["content"] = response
+    yield history, "", "✅ 当前任务已结束"
+
+
+def respondRoundAgent(user_input, history, model, temperature, top_p, system_prompt):
+    """处理普通 Agent 请求，通过 RoundAgent.round_stream 流式生成回复
 
     对话历史由 RoundAgent 内部的 LangChain RunnableWithMessageHistory 管理，
     Gradio 的 history 参数仅用于 UI 渲染展示。
@@ -89,7 +138,7 @@ def respondRoundGroup(user_input, history, model, temperature, top_p, system_pro
              [{"role": "user"/"assistant", "content": "..."}, ...]
     """
     if not user_input or not user_input.strip():
-        yield history, ""
+        yield history, "", ""
         return
 
     if not model:
@@ -98,13 +147,13 @@ def respondRoundGroup(user_input, history, model, temperature, top_p, system_pro
             "role": "assistant",
             "content": "❌ 未检测到可用模型，请确认 Ollama 服务已启动（`ollama serve`）且已 `ollama pull` 至少一个模型，然后点击「刷新模型列表」。",
         }]
-        yield history, ""
+        yield history, "", ""
         return
 
     # 追加用户消息和空的 assistant 占位
     history = history + [{"role": "user", "content": user_input}]
     history = history + [{"role": "assistant", "content": ""}]
-    yield history, ""
+    yield history, "", ""
 
     # ---- 调用 RoundAgent.round_stream 完成对话 ----
     full_response = ""
@@ -118,11 +167,56 @@ def respondRoundGroup(user_input, history, model, temperature, top_p, system_pro
         ):
             full_response += chunk
             history[-1]["content"] = full_response
-            yield history, ""
+            yield history, "", ""
     except Exception as e:
         full_response = f"❌ 请求出错：{e}"
         history[-1]["content"] = full_response
-        yield history, ""
+        yield history, "", "✅ 当前任务已结束"
+
+
+def respond(user_input, history, model, temperature, top_p, system_prompt, selected_agent_type):
+    """根据用户选择，只调用对应的 Agent 处理函数。"""
+    if not user_input or not user_input.strip():
+        yield history, "", ""
+        return
+
+    if selected_agent_type == "Game Agent":
+        yield from respondGameAgent(user_input, history)
+        return
+
+    if selected_agent_type == "Graph Agent":
+        if not model:
+            yield from respondRoundAgent(
+                user_input,
+                history,
+                model,
+                temperature,
+                top_p,
+                system_prompt,
+            )
+            return
+        yield from respondGraphAgent(
+            user_input,
+            history,
+            model,
+            temperature,
+            top_p,
+            system_prompt,
+        )
+        return
+
+    if selected_agent_type == "MCP-Travel":
+        yield from respondMCPTravel(user_input, history, model)
+        return
+
+    yield from respondRoundAgent(
+        user_input,
+        history,
+        model,
+        temperature,
+        top_p,
+        system_prompt,
+    )
 
 
 with gr.Blocks(title="Ollama Chat") as demo:
@@ -172,7 +266,7 @@ with gr.Blocks(title="Ollama Chat") as demo:
                     adv_reset_btn = gr.Button("↩️ 重置默认", variant="secondary")
                     adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
             agent_type = gr.Radio(
-                choices=["Code Expert","Travel Guide","Math Tutor","Story Teller"],
+                choices=["Code Expert", "Travel Guide", "Math Tutor", "Story Teller", "Game Agent", "Graph Agent", "MCP-Travel"],
                 value="Code Expert",
                 label="Agent 类型",
             )
@@ -202,6 +296,7 @@ with gr.Blocks(title="Ollama Chat") as demo:
                 height=560,
                 buttons=["copy", "copy_all"],
             )
+            task_status = gr.Markdown()
             user_input_box = gr.Textbox(
                 placeholder="输入消息...",
                 show_label=False,
@@ -231,13 +326,13 @@ with gr.Blocks(title="Ollama Chat") as demo:
     )
 
     user_input_box.submit(
-        respondRoundGroup, #respond_url, #respondRoundGroup
-        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, system_prompt_box],
-        outputs=[chatbot, user_input_box],
+        respond,
+        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, system_prompt_box, agent_type],
+        outputs=[chatbot, user_input_box, task_status],
     )
 
     refresh_btn.click(refresh_models, inputs=None, outputs=model_dropdown)
-    clear_btn.click(clear_chat, inputs=None, outputs=[chatbot, user_input_box])
+    clear_btn.click(clear_chat, inputs=None, outputs=[chatbot, user_input_box, task_status])
 
     model_dropdown.change(
         modelChanged,
