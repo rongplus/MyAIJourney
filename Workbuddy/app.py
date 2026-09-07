@@ -5,7 +5,7 @@ from ronglog import log
 
 from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
 
-from localollama_client import list_models, respond_url, chat_stream
+from url_client import list_models, respond_url, chat_stream
 
 
 def get_default_model(models: list[str]):
@@ -26,6 +26,22 @@ def toolChanged(tool_selections):
     # Update the selected tools based on user selection
     """记录用户选择的工具。"""
     log("Tool selection changed to: " + str(tool_selections or []))
+
+
+
+def noChat(user_input_box, chatbot):
+    user_input_box.submit(
+        userInput,
+        inputs=[user_input_box, chatbot],
+        outputs=[chatbot,user_input_box],
+    )
+
+def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
+    user_input_box.submit(
+        respond_url,
+        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
+        outputs=[chatbot,user_input_box],
+    )
 
 with gr.Blocks(title="Rong's Workbuddy") as demo:
     gr.Markdown("# 🦙 Rong's Workbuddy")
@@ -117,17 +133,11 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
     
     # 事件绑定: chat
     """
-    user_input_box.submit(
-                userInput,
-                inputs=[user_input_box, chatbot],
-                outputs=[chatbot,user_input_box],
-            )
+    
     """
-    user_input_box.submit(
-            respond_url,
-            inputs=[  user_input_box, chatbot, model_dropdown,temperature_slider, top_p_slider],
-            outputs=[chatbot,user_input_box],
-        )
+
+    chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
+    
     tool_selections.change(
             toolChanged,
             inputs=[tool_selections],
