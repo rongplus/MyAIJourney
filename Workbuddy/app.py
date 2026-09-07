@@ -1,5 +1,9 @@
 import gradio as gr
 
+from ronglog import log
+
+from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
+
 # Response the user input
 def userInput(user_input, history):
     history = history or []
@@ -8,7 +12,10 @@ def userInput(user_input, history):
     #Second is for return to the input box or user
     yield history, "Got it! Processing..."
 
-
+def toolChanged(tool_selections):
+    # Update the selected tools based on user selection
+    """记录用户选择的工具。"""
+    log("Tool selection changed to: " + str(tool_selections or []))
 
 with gr.Blocks(title="Rong's Workbuddy") as demo:
     gr.Markdown("# 🦙 Rong's Workbuddy")
@@ -17,6 +24,14 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
             # ---- 侧边栏设置 ----
             with gr.Column(scale=1, min_width=280):
                 gr.Markdown("### ⚙️ 设置")
+
+                tool_selections = gr.CheckboxGroup(
+                                choices=['Get Weather', 'Safe Path', 'Read File', 'Write File', 'List Files'],
+                                value=[],
+                                label="Tool 类型",
+                            )
+
+            # ---- 聊天窗口 ----
 
             with gr.Column(scale=4, min_width=600):
                 gr.Markdown("### 💬 聊天窗口")
@@ -36,6 +51,11 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
             userInput,
             inputs=[user_input_box, chatbot],
             outputs=[chatbot,user_input_box],
+        )
+    tool_selections.change(
+            toolChanged,
+            inputs=[tool_selections],
+            outputs=None
         )
 
 if __name__ == "__main__":
