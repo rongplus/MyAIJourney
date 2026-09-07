@@ -1,9 +1,8 @@
 # My AI Journey
 This repository is designed to build my own AI knowledge system through a closed loop of Input → Organization → Output. The content is strictly structured according to my learning roadmap, ensuring that every step of the journey is traceable.
 
-# Project 1
-  - MyAIJourney
-    -- Added tool usage
+# Project 1  - MyAIJourney
+    ## Added tool usage
     + weather
     + list file
     + write file
@@ -11,12 +10,18 @@ This repository is designed to build my own AI knowledge system through a closed
     + gmail
 
     ## Added MCP
+    + Add Server
+    + Add client
     ## Added multiple agents
     + ollama
     + langchain
     + langraph
     + autogen
-    
+
 # Project 2
+  - Step 1: Create UI
+  - Step 2: Create Tools
+  - Step 3: Add local agents
+  - Step 4: Add MCP
 
 # project 3
