@@ -16,6 +16,7 @@ from mylog import log
 from gameAgent import run_game_agent_sync
 from graphAgent import run_graph_agent_sync
 from travelAgent import clear_travel_agent_history, run_travel_agent_sync
+from mcpAgent import run_mcp_agent_sync, clear_mcp_agent_history
 
 from myfunctions import get_default_model, _to_text, change_agent, toolChanged, modelChanged
 
@@ -36,6 +37,7 @@ def clear_chat():
     """清空对话历史 — 同时清空 Gradio UI 和 RoundAgent 的 LangChain 历史"""
     agent.clear_history()
     clear_travel_agent_history()
+    clear_mcp_agent_history()
     return [], "", ""
 
 
@@ -46,6 +48,7 @@ def respond_url(user_input, history, model, temperature, top_p, system_prompt):
     history: list[dict]，使用 gradio Chatbot 的 messages 格式
              [{"role": "user"/"assistant", "content": "..."}, ...]
     """
+    log(f"respond_url: user_input={user_input}, model={model}, temperature={temperature}, top_p={top_p}, system_prompt={system_prompt}")
     if not user_input or not user_input.strip():
         yield history, "", ""
         return
@@ -85,6 +88,7 @@ def respond_url(user_input, history, model, temperature, top_p, system_prompt):
 
 def respondGameAgent(user_input, history):
     """处理 Game Agent 请求，并把 AutoGen 团队结果显示在聊天窗口。"""
+    log(f"respondGameAgent: user_input={user_input},")
     history = history + [{"role": "user", "content": user_input}]
     history = history + [{"role": "assistant", "content": ""}]
     yield history, "", ""
@@ -98,6 +102,7 @@ def respondGameAgent(user_input, history):
 
 def respondGraphAgent(user_input, history, model, temperature, top_p, system_prompt):
     """处理 Graph Agent 请求，并把 LangGraph 结果显示在聊天窗口。"""
+    log(f"respondGraphAgent: user_input={user_input},")
     history = history + [{"role": "user", "content": user_input}]
     history = history + [{"role": "assistant", "content": ""}]
     yield history, "", ""
@@ -117,6 +122,7 @@ def respondGraphAgent(user_input, history, model, temperature, top_p, system_pro
 
 def respondMCPTravel(user_input, history, model):
     """处理 MCP-Travel 请求，并保留连续旅行对话上下文。"""
+    log(f"respondMCPTravel: user_input={user_input}, model={model}")
     history = history + [{"role": "user", "content": user_input}]
     history = history + [{"role": "assistant", "content": ""}]
     yield history, "", ""
@@ -124,6 +130,20 @@ def respondMCPTravel(user_input, history, model):
         response = run_travel_agent_sync(user_input, model=model or "gpt-5.4-mini")
     except Exception as e:
         response = f"❌ MCP-Travel 请求出错：{e}"
+    history[-1]["content"] = response
+    yield history, "", "✅ 当前任务已结束"
+
+
+def respondMCP(user_input, history, model):
+    """处理 MCP 请求，连接 Gmail MCP server 进行邮件操作。"""
+    log(f"respondMCP: user_input={user_input}, model={model}")
+    history = history + [{"role": "user", "content": user_input}]
+    history = history + [{"role": "assistant", "content": ""}]
+    yield history, "", ""
+    try:
+        response = run_mcp_agent_sync(user_input, model=model or "qwen2.5:7b")
+    except Exception as e:
+        response = f"❌ MCP Agent 请求出错：{e}"
     history[-1]["content"] = response
     yield history, "", "✅ 当前任务已结束"
 
@@ -137,6 +157,7 @@ def respondRoundAgent(user_input, history, model, temperature, top_p, system_pro
     history: list[dict]，使用 gradio Chatbot 的 messages 格式
              [{"role": "user"/"assistant", "content": "..."}, ...]
     """
+    log(f"respondGraphAgent: user_input={user_input},")
     if not user_input or not user_input.strip():
         yield history, "", ""
         return
@@ -176,6 +197,7 @@ def respondRoundAgent(user_input, history, model, temperature, top_p, system_pro
 
 def respond(user_input, history, model, temperature, top_p, system_prompt, selected_agent_type):
     """根据用户选择，只调用对应的 Agent 处理函数。"""
+    log(f"respond: user_input={user_input}, model={model}, temperature={temperature}, top_p={top_p}, system_prompt={system_prompt}, selected_agent_type={selected_agent_type}")
     if not user_input or not user_input.strip():
         yield history, "", ""
         return
@@ -207,6 +229,10 @@ def respond(user_input, history, model, temperature, top_p, system_prompt, selec
 
     if selected_agent_type == "MCP-Travel":
         yield from respondMCPTravel(user_input, history, model)
+        return
+
+    if selected_agent_type == "MCP":
+        yield from respondMCP(user_input, history, model)
         return
 
     yield from respondRoundAgent(
@@ -266,7 +292,7 @@ with gr.Blocks(title="Ollama Chat") as demo:
                     adv_reset_btn = gr.Button("↩️ 重置默认", variant="secondary")
                     adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
             agent_type = gr.Radio(
-                choices=["Code Expert", "Travel Guide", "Math Tutor", "Story Teller", "Game Agent", "Graph Agent", "MCP-Travel"],
+                choices=["Code Expert", "Travel Guide", "Math Tutor", "Story Teller", "Game Agent", "Graph Agent", "MCP-Travel", "MCP"],
                 value="Code Expert",
                 label="Agent 类型",
             )

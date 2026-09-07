@@ -3,9 +3,20 @@ This repository is designed to build my own AI knowledge system through a closed
 
 # Project 1
   - MyAIJourney
-    ## Added tool usage
+    -- Added tool usage
+    + weather
+    + list file
+    + write file
+    + read file
+    + gmail
+
     ## Added MCP
     ## Added multiple agents
+    + ollama
+    + langchain
+    + langraph
+    + autogen
+    
 # Project 2
 
 # project 3
