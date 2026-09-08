@@ -13,7 +13,7 @@ PROJECT_ROOT = Path("./game_project").resolve()
 def ensure_project_root():
     PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
 
-@tool
+
 def get_weather(city: str) -> str:
     """get_weather
 
@@ -23,6 +23,7 @@ def get_weather(city: str) -> str:
         city: 城市名称（中英文均可），如 "北京"、"上海"、"Tokyo"
     """
     try:
+        log(f"正在查询天气 for city: {city}")
         # 1. 地理编码：城市名 -> 经纬度
         geo_resp = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
@@ -195,7 +196,7 @@ def list_files(subdir: str = "") -> str:
 
 
 TOOLS= [
-    get_weather,
+    
     safe_path,
     read_file,
     write_file,
