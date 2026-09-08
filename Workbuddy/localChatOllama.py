@@ -64,11 +64,14 @@ def download_pdf_text(url: str) -> str:
 
 from langchain_core.tools import StructuredTool
 
+from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
+
 tools = [
     StructuredTool.from_function(ddgs_search, name="ddgs_search", description="Perform web search via DuckDuckGo."),
     StructuredTool.from_function(browser_render, name="browser_render", description="Render a webpage using headless Chromium and return HTML content."),
     StructuredTool.from_function(http_fetch, name="http_fetch", description="Fetch plain text or JSON from HTTP endpoints."),
     StructuredTool.from_function(download_pdf_text, name="download_pdf_text", description="Download a PDF file and extract its textual content."),
+    StructuredTool.from_function(get_weather, name="get_weather", description="当你需要查询天气的时候， 调用此函数."),
 ]
 
 
@@ -133,32 +136,79 @@ class localChatOllama:
 
 
 
-    def chatWithChatOllama(self, input_text: str) -> str:
-        result = self.agent.invoke({"input": input_text})
+    def _normalize_history(self, history):
+        if not history:
+            return []
+        messages = []
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "user")).lower()
+            content = item.get("content", "")
+            if not content:
+                continue
+            if role in {"user", "assistant", "system"}:
+                messages.append({"role": role, "content": str(content)})
+        return messages
+
+    def _build_history_prompt(self, input_text: str, history=None) -> str:
+        history = self._normalize_history(history or [])
+        if not history:
+            return input_text
+
+        parts = []
+        for msg in history:
+            role = msg["role"]
+            content = msg["content"].strip()
+            if not content:
+                continue
+            if role == "user":
+                parts.append(f"User: {content}")
+            elif role == "assistant":
+                parts.append(f"Assistant: {content}")
+            else:
+                parts.append(f"System: {content}")
+        parts.append(f"User: {input_text.strip()}")
+        return "\n\n".join(parts)
+
+    def chatWithChatOllama(self, input_text: str, history=None) -> str:
+        prompt = self._build_history_prompt(input_text, history)
+        result = self.agent.invoke({"input": prompt})
         return result.get("output")
         #print(output)
 
 
-    def chatWithChatOllamaStream(self, input_text: str):
-        for result in self.agent.stream({"input": input_text}):
+    def chatWithChatOllamaStream(self, input_text: str, history=None):
+        prompt = self._build_history_prompt(input_text, history)
+        for result in self.agent.stream({"input": prompt}):
             yield result.get("output")
 
 
-    def chatWithChatOllamaWithMemory(self, input_text: str, session_id: str) -> str:
+    def chatWithChatOllamaWithMemory(self, input_text: str, session_id: str, history=None) -> str:
         if session_id not in self.store:
             self.store[session_id] = []
-        self.store[session_id].append({"role": "user", "content": input_text})
-        result = self.agent.invoke({"input": input_text, "chat_history": self.store[session_id]})
-        self.store[session_id].append({"role": "assistant", "content": result.get("output")})
+        if history is not None:
+            self.store[session_id] = self._normalize_history(history)
+        previous = self.store[session_id]
+        previous.append({"role": "user", "content": input_text})
+        prompt = self._build_history_prompt(input_text, previous)
+        result = self.agent.invoke({"input": prompt})
+        previous.append({"role": "assistant", "content": result.get("output")})
+        self.store[session_id] = previous
         return result.get("output")
 
 
-    def chatWithChatOllamaWithMemoryStream(self,input_text: str, session_id: str):
+    def chatWithChatOllamaWithMemoryStream(self, input_text: str, session_id: str, history=None):
         if session_id not in self.store:
             self.store[session_id] = []
-        self.store[session_id].append({"role": "user", "content": input_text})
-        for result in self.agent.stream({"input": input_text, "chat_history": self.store[session_id]}):
+        if history is not None:
+            self.store[session_id] = self._normalize_history(history)
+        previous = self.store[session_id]
+        previous.append({"role": "user", "content": input_text})
+        prompt = self._build_history_prompt(input_text, previous)
+        for result in self.agent.stream({"input": prompt}):
             yield result.get("output")
+        self.store[session_id] = previous + [{"role": "assistant", "content": ""}]
 
     def chatWithRunableWithMessageHistory(self,input_text: str, session_id: str) -> str:
         response = self.chat.invoke(

@@ -6,6 +6,7 @@ from ronglog import log
 from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
 
 from url_client import list_models, respond_url, chat_stream
+from localChatOllama import localChatOllama
 
 
 def get_default_model(models: list[str]):
@@ -13,7 +14,7 @@ def get_default_model(models: list[str]):
         return None
     return "qwen2.5:7b" if "qwen2.5:7b" in models else models[0]
 
-
+chat_client = localChatOllama(modelName='qwen2.5:7b', temperature= 0.7)
 # Response the user input
 def userInput(user_input, history):
     history = history or []
@@ -27,7 +28,10 @@ def toolChanged(tool_selections):
     """记录用户选择的工具。"""
     log("Tool selection changed to: " + str(tool_selections or []))
 
-
+def specialChanged(tool_selections):
+    # Update the selected tools based on user selection
+    """记录用户选择的工具。"""
+    log("Special Tool selection changed to: " + str(tool_selections or []))
 
 def noChat(user_input_box, chatbot):
     user_input_box.submit(
@@ -41,6 +45,48 @@ def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top
         respond_url,
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
         outputs=[chatbot,user_input_box],
+    )
+
+
+def respond_local_ollama(user_input, history, model, temperature, top_p):
+    history = history or []
+    if not user_input or not str(user_input).strip():
+        yield history, ""
+        return
+
+    if not model:
+        history = history + [{"role": "user", "content": user_input}]
+        history = history + [{
+            "role": "assistant",
+            "content": "❌ 未检测到可用的本地模型，请确认 Ollama 服务已启动，并确保已安装模型。",
+        }]
+        yield history, ""
+        return
+
+    history = history + [{"role": "user", "content": user_input}]
+    history = history + [{"role": "assistant", "content": ""}]
+    yield history, ""
+    log("history")
+    log(history)
+
+    try:
+        full_response = ""
+        for chunk in chat_client.chatWithChatOllamaStream(user_input, history=history[:-1]):
+            if chunk is None:
+                continue
+            full_response += str(chunk)
+            history[-1]["content"] = full_response
+            yield history, ""
+    except Exception as e:
+        history[-1]["content"] = f"❌ 本地模型调用失败：{e}"
+        yield history, ""
+
+
+def chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
+    user_input_box.submit(
+        respond_local_ollama,
+        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
+        outputs=[chatbot, user_input_box],
     )
 
 with gr.Blocks(title="Rong's Workbuddy") as demo:
@@ -95,6 +141,13 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                         adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
 
 
+                special_selector = gr.Radio(
+                        choices=["Code Expert", "Travel Guide", "Math Tutor", "Story Teller", "Game Agent", "Graph Agent", "MCP-Travel", "MCP"],
+                        value="Code Expert",
+                        label="Agent 类型",
+                    )
+                
+
             # ---- 聊天窗口 ----
 
             with gr.Column(scale=4, min_width=600):
@@ -136,11 +189,18 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
     
     """
 
-    chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
-    
+    #chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
+    chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
+
     tool_selections.change(
             toolChanged,
             inputs=[tool_selections],
+            outputs=None
+        )
+
+    special_selector.change(
+            specialChanged,
+            inputs=[special_selector],
             outputs=None
         )
 
