@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pymsgbox import prompt
+from ronglog import log
 # Per-session memory store
 
 
@@ -171,6 +172,17 @@ class localChatOllama:
         parts.append(f"User: {input_text.strip()}")
         return "\n\n".join(parts)
 
+    def _extract_text(self, value):
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            return str(value.get("text") or value.get("content") or "")
+        if isinstance(value, list):
+            return "".join(self._extract_text(item) for item in value)
+        return str(value)
+
     def chatWithChatOllama(self, input_text: str, history=None) -> str:
         prompt = self._build_history_prompt(input_text, history)
         result = self.agent.invoke({"input": prompt})
@@ -178,10 +190,51 @@ class localChatOllama:
         #print(output)
 
 
-    def chatWithChatOllamaStream(self, input_text: str, history=None):
-        prompt = self._build_history_prompt(input_text, history)
-        for result in self.agent.stream({"input": prompt}):
-            yield result.get("output")
+    def respond_local_ollama_stream(self, user_input, history, model, temperature, top_p):
+        history = [
+            {
+                "role": message.get("role"),
+                "content": str(message.get("content") or ""),
+            }
+            for message in (history or [])
+            if isinstance(message, dict)
+            and message.get("role") in {"user", "assistant"}
+        ]
+        if not user_input or not str(user_input).strip():
+            yield history, ""
+            return
+
+        if not model:
+            history = history + [{"role": "user", "content": user_input}]
+            history = history + [{
+                "role": "assistant",
+                "content": "❌ 未检测到可用的本地模型，请确认 Ollama 服务已启动，并确保已安装模型。",
+            }]
+            yield history, ""
+            return
+
+        history = history + [{"role": "user", "content": user_input}]
+        history = history + [{"role": "assistant", "content": ""}]
+        yield history, ""
+        log("history")
+        log(history)
+
+        try:
+            full_response = ""
+            prompt = self._build_history_prompt(user_input, history[:-1])
+            for result in self.agent.stream({"input": prompt}):
+                chunk = self._extract_text(result.get("output"))
+                if not chunk:
+                    continue
+                full_response += chunk
+                history[-1]["content"] = full_response
+                yield history, ""
+        except Exception as error:
+            history[-1]["content"] = f"❌ 本地模型调用失败：{error}"
+            yield history, ""
+
+        
+        
 
 
     def chatWithChatOllamaWithMemory(self, input_text: str, session_id: str, history=None) -> str:
@@ -228,6 +281,9 @@ if __name__ == "__main__":
         if user_input.lower() == "exit":
             break
         print("AI:", end=" ")
-        for chunk in chatOllama.chatWithChatOllamaStream(user_input):
-            print(chunk, end="", flush=True)
+        prompt = chatOllama._build_history_prompt(user_input)
+        for result in chatOllama.agent.stream({"input": prompt}):
+            chunk = result.get("output")
+            if chunk:
+                print(chunk, end="", flush=True)
         print("Done")
