@@ -114,7 +114,7 @@ def read_file(filepath: str) -> str:
     """
     log("正在启动read_file...")
     try:
-        path = safe_path(filepath)
+        path = safe_path.invoke({"filepath": filepath})
 
         if not path.exists():
             return f"File not found: {filepath}"
@@ -143,7 +143,7 @@ def write_file(filepath: str, content: str) -> str:
     log(f"Content length: {len(content)}")
 
     try:
-        path = safe_path(filepath)
+        path = safe_path.invoke({"filepath": filepath})
 
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -169,7 +169,7 @@ def list_files(subdir: str = "") -> str:
     """
     log("正在启动list_files...")
     try:
-        root = safe_path(subdir)
+        root = safe_path.invoke({"filepath": subdir})
 
         if not root.exists():
             return "Directory does not exist"

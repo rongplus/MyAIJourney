@@ -6,10 +6,13 @@ from rongtools import get_weather, safe_path, read_file, write_file, list_files,
 
 from url_client import list_models, respond_url
 
-from myclient import respond_local_ollama_stream, get_default_model
+from myclient import get_default_model, getLocalOllamaClient, getLocalOpenAIClient
+from localChatOllama import localChatOllama
 
 from localOpenAI import openai_client
 
+chat_client = localChatOllama(modelName="qwen2.5:7b", temperature=0.7)
+openai_client = getLocalOpenAIClient(modelName="llama3.2-vision:latest", temperature=0.7)
 
 # Response the user input
 def userInput(user_input, history):
@@ -48,7 +51,7 @@ def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top
 
 def chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
     user_input_box.submit(
-        respond_local_ollama_stream,
+        chat_client.respond_local_ollama_stream,
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
         outputs=[chatbot, user_input_box],
     )
@@ -59,6 +62,25 @@ def chatWithLocalOpenAI(user_input_box, chatbot, model_dropdown, temperature_sli
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, conversation_id],
         outputs=[chatbot, user_input_box],
     )
+
+def chatWithSelectedModel(user_input, history, model, temperature, top_p, backend, conversation_id):
+    if backend == "OpenAI":
+        yield from openai_client.chatWithOpenAIStream(
+            user_input,
+            history,
+            model,
+            temperature,
+            top_p,
+            conversation_id,
+        )
+    else:
+        yield from chat_client.respond_local_ollama_stream(
+            user_input,
+            history,
+            model,
+            temperature,
+            top_p,
+        )
 
 ###### --------UI-------
 
@@ -115,9 +137,9 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
 
 
                 special_selector = gr.Radio(
-                        choices=["Code Expert", "Travel Guide", "Math Tutor", "Story Teller", "Game Agent", "Graph Agent", "MCP-Travel", "MCP"],
-                        value="Code Expert",
-                        label="Agent 类型",
+                        choices=["Ollama", "OpenAI" ],
+                    value="Ollama",
+                    label="聊天模型",
                     )
                 conversation_id = gr.Textbox(
                         value="default",
@@ -167,8 +189,19 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
     
     """
 
-    #chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
-    chatWithLocalOpenAI(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
+    user_input_box.submit(
+        chatWithSelectedModel,
+        inputs=[
+            user_input_box,
+            chatbot,
+            model_dropdown,
+            temperature_slider,
+            top_p_slider,
+            special_selector,
+            conversation_id,
+        ],
+        outputs=[chatbot, user_input_box],
+    )
 
     tool_selections.change(
             toolChanged,
