@@ -1,20 +1,16 @@
 import gradio as gr
-from huggingface_hub import list_models
 
 from ronglog import log
 
 from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
 
-from url_client import list_models, respond_url, chat_stream
-from localChatOllama import localChatOllama
+from url_client import list_models, respond_url
+
+from myclient import respond_local_ollama_stream, get_default_model
+
+from localOpenAI import openai_client
 
 
-def get_default_model(models: list[str]):
-    if not models:
-        return None
-    return "qwen2.5:7b" if "qwen2.5:7b" in models else models[0]
-
-chat_client = localChatOllama(modelName='qwen2.5:7b', temperature= 0.7)
 # Response the user input
 def userInput(user_input, history):
     history = history or []
@@ -40,6 +36,7 @@ def noChat(user_input_box, chatbot):
         outputs=[chatbot,user_input_box],
     )
 
+##### -----chat functions-----
 def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
     user_input_box.submit(
         respond_url,
@@ -48,46 +45,22 @@ def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top
     )
 
 
-def respond_local_ollama(user_input, history, model, temperature, top_p):
-    history = history or []
-    if not user_input or not str(user_input).strip():
-        yield history, ""
-        return
-
-    if not model:
-        history = history + [{"role": "user", "content": user_input}]
-        history = history + [{
-            "role": "assistant",
-            "content": "❌ 未检测到可用的本地模型，请确认 Ollama 服务已启动，并确保已安装模型。",
-        }]
-        yield history, ""
-        return
-
-    history = history + [{"role": "user", "content": user_input}]
-    history = history + [{"role": "assistant", "content": ""}]
-    yield history, ""
-    log("history")
-    log(history)
-
-    try:
-        full_response = ""
-        for chunk in chat_client.chatWithChatOllamaStream(user_input, history=history[:-1]):
-            if chunk is None:
-                continue
-            full_response += str(chunk)
-            history[-1]["content"] = full_response
-            yield history, ""
-    except Exception as e:
-        history[-1]["content"] = f"❌ 本地模型调用失败：{e}"
-        yield history, ""
-
 
 def chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
     user_input_box.submit(
-        respond_local_ollama,
+        respond_local_ollama_stream,
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
         outputs=[chatbot, user_input_box],
     )
+
+def chatWithLocalOpenAI(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
+    user_input_box.submit(
+        openai_client.chatWithOpenAIStream,
+        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, conversation_id],
+        outputs=[chatbot, user_input_box],
+    )
+
+###### --------UI-------
 
 with gr.Blocks(title="Rong's Workbuddy") as demo:
     gr.Markdown("# 🦙 Rong's Workbuddy")
@@ -146,6 +119,11 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                         value="Code Expert",
                         label="Agent 类型",
                     )
+                conversation_id = gr.Textbox(
+                        value="default",
+                        label="对话 ID",
+                        info="重新打开时使用相同的 ID 继续对话",
+                    )
                 
 
             # ---- 聊天窗口 ----
@@ -190,7 +168,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
     """
 
     #chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
-    chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
+    chatWithLocalOpenAI(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider)
 
     tool_selections.change(
             toolChanged,
