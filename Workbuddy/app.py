@@ -6,13 +6,17 @@ from rongtools import get_weather, safe_path, read_file, write_file, list_files,
 
 from url_client import list_models, respond_url
 
-from myclient import get_default_model, getLocalOllamaClient, getLocalOpenAIClient
+from myclient import get_default_model, getClient
 from localChatOllama import localChatOllama
 
-from localOpenAI import openai_client
 
-chat_client = localChatOllama(modelName="qwen2.5:7b", temperature=0.7)
-openai_client = getLocalOpenAIClient(modelName="llama3.2-vision:latest", temperature=0.7)
+current_client = getClient(
+    "OpenAI",
+    "qwen2.5:7b",
+    0.7,
+    "ollamaAI_memory.json",
+    ["download_pdf_text"],
+)
 
 # Response the user input
 def userInput(user_input, history):
@@ -27,10 +31,20 @@ def toolChanged(tool_selections):
     """记录用户选择的工具。"""
     log("Tool selection changed to: " + str(tool_selections or []))
 
-def specialChanged(tool_selections):
-    # Update the selected tools based on user selection
-    """记录用户选择的工具。"""
-    log("Special Tool selection changed to: " + str(tool_selections or []))
+def specialChanged(backend, model, temperature):
+    global current_client
+    model = model or ("llama3.2-vision:latest" if backend == "OpenAI" else "qwen2.5:7b")
+    temperature = temperature if temperature is not None else 0.7
+    memory_file = "openAI_memory.json" if backend == "OpenAI" else "ollamaAI_memory.json"
+    current_client = getClient(
+        backend,
+        model,
+        temperature,
+        memory_file,
+        ["download_pdf_text", "get_weather"],
+    )
+    log(f"切换聊天 client: {backend}, model={model}")
+    return None
 
 def noChat(user_input_box, chatbot):
     user_input_box.submit(
@@ -49,23 +63,11 @@ def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top
 
 
 
-def chatWithLocalOllama(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
-    user_input_box.submit(
-        chat_client.respond_local_ollama_stream,
-        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
-        outputs=[chatbot, user_input_box],
-    )
 
-def chatWithLocalOpenAI(user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider):
-    user_input_box.submit(
-        openai_client.chatWithOpenAIStream,
-        inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider, conversation_id],
-        outputs=[chatbot, user_input_box],
-    )
 
 def chatWithSelectedModel(user_input, history, model, temperature, top_p, backend, conversation_id):
-    if backend == "OpenAI":
-        yield from openai_client.chatWithOpenAIStream(
+   
+        yield from current_client.streamChat(
             user_input,
             history,
             model,
@@ -73,14 +75,8 @@ def chatWithSelectedModel(user_input, history, model, temperature, top_p, backen
             top_p,
             conversation_id,
         )
-    else:
-        yield from chat_client.respond_local_ollama_stream(
-            user_input,
-            history,
-            model,
-            temperature,
-            top_p,
-        )
+
+   
 
 ###### --------UI-------
 
@@ -95,10 +91,35 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                 tool_selections = gr.CheckboxGroup(
                                 choices=['Get Weather', 'Safe Path', 'Read File', 'Write File', 'List Files'],
                                 value=[],
-                                label="Tool 类型",
+                                label="Tools",
                             )
                 
-                llm_btn = gr.Button("⚙️ 本地模型", variant="secondary")    
+                
+
+                special_selector = gr.Radio(
+                        choices=["Ollama", "OpenAI" ,"Game专家"],
+                    value="Ollama",
+                    label="专家",
+                    )
+
+                teams_selector = gr.Radio(
+                                    choices=["Ollama", "OpenAI" ,"Game专家"],
+                                    value="Ollama",
+                                    label="团队",
+                                    )
+                                
+                conversation_id = gr.Textbox(
+                        value="default",
+                        label="对话 ID",
+                        info="重新打开时使用相同的 ID 继续对话",
+                    )
+
+                automations = gr.Textbox(
+                                        value="自动化任务",
+                                        label="自动化任务",
+                                        info="自动化任务",
+                                    )
+                llm_btn = gr.Button("⚙️ 本地模型设置", variant="secondary")    
                 # ---- Advance Setting 弹出面板（默认隐藏） ----
                 llm_panel = gr.Group(visible=False)
                 with llm_panel:
@@ -134,18 +155,6 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                     with gr.Row():
                         adv_reset_btn = gr.Button("↩️ 重置默认", variant="secondary")
                         adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
-
-
-                special_selector = gr.Radio(
-                        choices=["Ollama", "OpenAI" ],
-                    value="Ollama",
-                    label="聊天模型",
-                    )
-                conversation_id = gr.Textbox(
-                        value="default",
-                        label="对话 ID",
-                        info="重新打开时使用相同的 ID 继续对话",
-                    )
                 
 
             # ---- 聊天窗口 ----
@@ -211,8 +220,8 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
 
     special_selector.change(
             specialChanged,
-            inputs=[special_selector],
-            outputs=None
+            inputs=[special_selector, model_dropdown, temperature_slider],
+            outputs=None,
         )
 
 if __name__ == "__main__":

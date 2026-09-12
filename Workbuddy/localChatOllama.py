@@ -82,10 +82,24 @@ from langchain_classic.agents import AgentType, initialize_agent
 
 
 class localChatOllama:
-    def __init__(self, modelName:str, temperature:int):
+    def __init__(self, modelName: str, temperature: float, memory_file: str = "ollamaAI_memory.json", custom_tools: list[str] | None = None):
+        self.custom_tools = [str(name).strip() for name in (custom_tools or []) if str(name).strip()]
+        available_tools = {tool.name: tool for tool in tools}
+        if self.custom_tools:
+            self.tools = [
+                available_tools[name]
+                for name in self.custom_tools
+                if name in available_tools
+            ]
+            unknown_tools = [name for name in self.custom_tools if name not in available_tools]
+            if unknown_tools:
+                log(f"忽略未注册的工具: {unknown_tools}")
+        else:
+            self.tools = tools
+
         self.llm = self.initLLM(modelName, temperature)
         self.agent = initialize_agent(
-            tools=tools,
+            tools=self.tools,
             llm=self.llm,
             agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
             verbose=True,
@@ -173,6 +187,7 @@ class localChatOllama:
         return "\n\n".join(parts)
 
     def _extract_text(self, value):
+        # Extract text content from various types of values (str, dict, list).
         if value is None:
             return ""
         if isinstance(value, str):
@@ -183,6 +198,16 @@ class localChatOllama:
             return "".join(self._extract_text(item) for item in value)
         return str(value)
 
+    def _append_current_user(self, history, user_input):
+        user_content = str(user_input).strip()
+        if (
+            history
+            and history[-1].get("role") == "user"
+            and str(history[-1].get("content", "")).strip() == user_content
+        ):
+            return history
+        return history + [{"role": "user", "content": user_input}]
+
     def chatWithChatOllama(self, input_text: str, history=None) -> str:
         prompt = self._build_history_prompt(input_text, history)
         result = self.agent.invoke({"input": prompt})
@@ -190,7 +215,7 @@ class localChatOllama:
         #print(output)
 
 
-    def respond_local_ollama_stream(self, user_input, history, model, temperature, top_p):
+    def streamChat(self, user_input, history, model, temperature, top_p,conversation_id):
         history = [
             {
                 "role": message.get("role"),
@@ -205,7 +230,7 @@ class localChatOllama:
             return
 
         if not model:
-            history = history + [{"role": "user", "content": user_input}]
+            history = self._append_current_user(history, user_input)
             history = history + [{
                 "role": "assistant",
                 "content": "❌ 未检测到可用的本地模型，请确认 Ollama 服务已启动，并确保已安装模型。",
@@ -213,7 +238,7 @@ class localChatOllama:
             yield history, ""
             return
 
-        history = history + [{"role": "user", "content": user_input}]
+        history = self._append_current_user(history, user_input)
         history = history + [{"role": "assistant", "content": ""}]
         yield history, ""
         log("history")
