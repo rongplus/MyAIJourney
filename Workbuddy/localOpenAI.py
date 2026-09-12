@@ -9,7 +9,13 @@ MODEL = "llama3.2-vision:latest"
 
 
 class localOpenAIClient:
-    def __init__(self, modelName: str = MODEL, temperature: float = 0.7, memory_file: str = "open AI_memory.json"):
+    def __init__(
+        self,
+        modelName: str = MODEL,
+        temperature: float = 0.7,
+        memory_file: str = "open AI_memory.json",
+        custom_tools: list[str] | None = None,
+    ):
         self.modelName = modelName
         self.temperature = temperature
         self.memory_file = Path(__file__).with_name(memory_file)
@@ -22,7 +28,25 @@ class localOpenAIClient:
             name="get_weather",
             description="查询指定城市的当前天气，包括温度、湿度、天气状况和风速。",
         )
-        self.tools = {tool.name: tool for tool in [weather_tool, *TOOLS]}
+        available_tools = {tool.name: tool for tool in [weather_tool, *TOOLS]}
+        selected_tools = [
+            str(name).strip()
+            for name in (custom_tools or [])
+            if str(name).strip()
+        ]
+        if selected_tools:
+            self.tools = {
+                name: available_tools[name]
+                for name in selected_tools
+                if name in available_tools
+            }
+            unknown_tools = [
+                name for name in selected_tools if name not in available_tools
+            ]
+            if unknown_tools:
+                log(f"忽略未注册的工具: {unknown_tools}")
+        else:
+            self.tools = available_tools
 
     def _tool_schemas(self):
         schemas = []
@@ -50,6 +74,18 @@ class localOpenAIClient:
             log(f"工具 {tool_name} 调用失败：{error}")
             return f"工具 {tool_name} 调用失败：{error}"
 
+    def _extract_text(self, value):
+            # Extract text content from various types of values (str, dict, list).
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                return str(value.get("text") or value.get("content") or "")
+            if isinstance(value, list):
+                return "".join(self._extract_text(item) for item in value)
+            return str(value)
+    
     def _stream_completion(self, messages, model, temperature, top_p):
         return self.llm.chat.completions.create(
             model=model or MODEL,
@@ -94,16 +130,25 @@ class localOpenAIClient:
             and message.get("role") in {"user", "assistant"}
         ]
 
-    def chatWithOpenAIStream(
+    def _append_current_user(self, history, user_input):
+        user_content = str(user_input).strip()
+        if (
+            history
+            and history[-1].get("role") == "user"
+            and str(history[-1].get("content", "")).strip() == user_content
+        ):
+            return history
+        return history + [{"role": "user", "content": user_input}]
+
+    def streamChat(
         self, user_input, history, model, temperature, top_p=1.0, conversation_id="default"
     ):
         conversation_id = str(conversation_id or "default").strip() or "default"
         model = model or self.modelName or MODEL
         history = self._get_history(conversation_id, history)
         history = [message for message in history if isinstance(message, dict)]
-        request_history = history + [{"role": "user", "content": user_input}]
-        display_history = self._chatbot_history(history) + [
-            {"role": "user", "content": user_input},
+        request_history = self._append_current_user(history, user_input)
+        display_history = self._chatbot_history(request_history) + [
             {"role": "assistant", "content": ""},
         ]
         yield display_history, ""
@@ -119,7 +164,7 @@ class localOpenAIClient:
                         continue
                     delta = event.choices[0].delta
                     if delta.content:
-                        text += delta.content
+                        text += self._extract_text(delta.content)
                         display_history[-1]["content"] = text
                         yield display_history, ""
                     for tool_delta in delta.tool_calls or []:
