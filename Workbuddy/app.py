@@ -103,7 +103,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                     )
 
                 teams_selector = gr.Radio(
-                                    choices=["Ollama", "OpenAI" ,"Game专家"],
+                                    choices=["软件开发团队", "全域内容分发专家团" ,"用户体验架构师"],
                                     value="Ollama",
                                     label="团队",
                                     )

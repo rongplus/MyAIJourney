@@ -2,13 +2,18 @@
 from asyncio.log import logger
 import os
 from pathlib import Path
+import subprocess
+import sys
 import requests
 from langchain_core.tools import tool
 
-from ronglog  import log
+try:
+    from .ronglog import log
+except ImportError:
+    from ronglog import log
 
-# 项目根目录
-PROJECT_ROOT = Path("./game_project").resolve()
+# 项目根目录固定在当前 Workbuddy 模块旁，避免随启动目录变化。
+PROJECT_ROOT = Path(__file__).resolve().parent / "game_project"
 
 def ensure_project_root():
     PROJECT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -194,11 +199,36 @@ def list_files(subdir: str = "") -> str:
         return f"Error listing files: {e}"
 
 
+@tool
+def run_python(code: str) -> str:
+    """在项目目录中执行一段 Python 代码并返回输出。"""
+    log("正在启动run_python...")
+    ensure_project_root()
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = (result.stdout + result.stderr).strip()
+        if len(output) > 12000:
+            output = output[-12000:]
+        status = "success" if result.returncode == 0 else f"failed (exit code {result.returncode})"
+        return f"{status}\n{output}" if output else status
+    except subprocess.TimeoutExpired:
+        return "failed: Python execution timed out after 30 seconds"
+    except Exception as e:
+        return f"failed: {e}"
+
+
 
 TOOLS= [
     
     safe_path,
     read_file,
     write_file,
-    list_files
+    list_files,
+    run_python,
 ]
