@@ -29,6 +29,19 @@ from langgraph.checkpoint.memory import InMemorySaver
 from agentTools import get_weather
 
 try:
+    from Workbuddy.prompt_custom import SENIOR_ENGINEER_SYSTEM_PROMPT
+except ModuleNotFoundError:
+    try:
+        from prompt_custom import SENIOR_ENGINEER_SYSTEM_PROMPT
+    except ModuleNotFoundError:
+        import sys
+        from pathlib import Path
+
+        workbuddy_path = Path(__file__).resolve().parents[1] / "Workbuddy"
+        sys.path.insert(0, str(workbuddy_path))
+        from prompt_custom import SENIOR_ENGINEER_SYSTEM_PROMPT
+
+try:
     from code_tools import CODE_TOOLS
 except ModuleNotFoundError:
     CODE_TOOLS = []
@@ -92,6 +105,10 @@ AGENT_CONFIGS = {
             "5. 用中文输出，格式清晰，便于团队评审\n"
         ),
         "tools": PRODUCT_TOOLS,
+    },
+    "senior_software_engineer": {
+        "system_prompt": SENIOR_ENGINEER_SYSTEM_PROMPT,
+        "tools": CODE_TOOLS,
     },
 }
 
@@ -583,6 +600,55 @@ def build_team_graph(
     return agent
 
 
+def build_senior_software_engineer_graph(
+    model: str = "qwen2.5:7b",
+    temperature: float = 0.7,
+    top_p: float = 0.9,
+    system_prompt: str = "",
+    custom_tools=None,
+):
+    """Build a Senior Software Engineer agent group with a tool loop.
+
+    The group follows: inspect/plan through the system prompt, then model
+    tool-call cycles, and finally a concise changes/validation/issues report.
+    """
+    selected_tools = list(custom_tools) if custom_tools is not None else list(CODE_TOOLS)
+    prompt = system_prompt.strip() or SENIOR_ENGINEER_SYSTEM_PROMPT
+    llm = ChatOllama(
+        model=model,
+        temperature=temperature,
+        top_p=top_p,
+        base_url="http://localhost:11434",
+    )
+    llm_with_tools = llm.bind_tools(selected_tools)
+
+    def call_model(state: MessagesState):
+        messages = state["messages"]
+        if not messages or not isinstance(messages[0], SystemMessage):
+            messages = [SystemMessage(content=prompt)] + list(messages)
+        response = llm_with_tools.invoke(messages)
+        return {"messages": [response]}
+
+    def route(state: MessagesState) -> Literal["tools", "end"]:
+        last_message = state["messages"][-1]
+        if getattr(last_message, "tool_calls", None):
+            return "tools"
+        return "end"
+
+    builder = StateGraph(MessagesState)
+    builder.add_node("senior_engineer", call_model)
+    builder.add_node("senior_engineer_tools", ToolNode(selected_tools))
+    builder.add_edge(START, "senior_engineer")
+    builder.add_conditional_edges(
+        "senior_engineer",
+        route,
+        {"tools": "senior_engineer_tools", "end": END},
+    )
+    builder.add_edge("senior_engineer_tools", "senior_engineer")
+
+    return builder.compile(checkpointer=InMemorySaver())
+
+
 def build_graph(
     agent_type: str = "weather",
     model: str = "qwen2.5:7b",
@@ -619,6 +685,13 @@ def build_graph(
         )
     if agent_type == "biz_team":
         return build_biz_team_graph(
+            temperature=temperature,
+            top_p=top_p,
+            system_prompt=system_prompt,
+        )
+    if agent_type == "senior_software_engineer":
+        return build_senior_software_engineer_graph(
+            model=model,
             temperature=temperature,
             top_p=top_p,
             system_prompt=system_prompt,

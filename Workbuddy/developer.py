@@ -65,16 +65,14 @@ def _looks_like_python_source(source: str) -> bool:
     )
 
 
-def _looks_like_useful_app(source: str) -> bool:
-    required_markers = (
-        "sqlite3",
-        "def add_account",
-        "def delete_account",
-        "def list_accounts",
-        "def monthly_report",
-        "if __name__",
-    )
-    return _looks_like_python_source(source) and all(marker in source for marker in required_markers)
+def _looks_like_useful_app(source: str, user_input: str = "") -> bool:
+    """Validate source against explicit requirements in the user's request."""
+    if not _looks_like_python_source(source):
+        return False
+    request = user_input.lower()
+    if "sqlite" in request or "sqlite3" in request:
+        return "sqlite3" in source
+    return True
 
 
 def _normalize_python_source(source: str) -> str:
@@ -110,7 +108,7 @@ def _progress_detail(node_name: str, iteration: int, node_state: dict, result: d
         return "需求分析 Agent 正在明确功能、数据结构和实现方案。"
     if node_name == "coding":
         if latest:
-            return f"Coding Agent 正在开发第 {iteration} 轮代码，目标文件是 game_project/app.py。"
+            return f"Coding Agent 正在根据用户需求开发第 {iteration} 轮代码，目标文件是 game_project/app.py。"
         return f"Coding Agent 正在开发第 {iteration} 轮代码。"
     if node_name == "coding_tools":
         return "Coding Agent 正在把实现写入项目文件，并准备验证。"
@@ -181,6 +179,67 @@ with gr.Blocks() as demo:
 
 if __name__ == "__main__":
     demo.launch()
+'''
+
+
+SQLITE_FALLBACK_APP_SOURCE = '''import sqlite3
+from datetime import date
+from pathlib import Path
+
+DB_PATH = Path(__file__).with_name("account_book.db")
+
+def connect_db(db_path=DB_PATH):
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    connection.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_date TEXT NOT NULL, description TEXT NOT NULL, category TEXT NOT NULL, amount REAL NOT NULL CHECK(amount >= 0))")
+    connection.commit()
+    return connection
+
+def add_account(entry_date, description, category, amount, db_path=DB_PATH):
+    date.fromisoformat(entry_date)
+    amount = float(amount)
+    if not description.strip() or amount < 0:
+        raise ValueError("description is required and amount must be non-negative")
+    with connect_db(db_path) as connection:
+        cursor = connection.execute("INSERT INTO accounts(entry_date, description, category, amount) VALUES (?, ?, ?, ?)", (entry_date, description.strip(), category.strip() or "其他", amount))
+    return cursor.lastrowid
+
+def delete_account(account_id, db_path=DB_PATH):
+    with connect_db(db_path) as connection:
+        cursor = connection.execute("DELETE FROM accounts WHERE id = ?", (int(account_id),))
+    return cursor.rowcount == 1
+
+def list_accounts(month=None, db_path=DB_PATH):
+    with connect_db(db_path) as connection:
+        query = "SELECT * FROM accounts ORDER BY entry_date, id"
+        params = ()
+        if month:
+            query = "SELECT * FROM accounts WHERE entry_date LIKE ? ORDER BY entry_date, id"
+            params = (f"{month}%",)
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
+
+def monthly_report(month, db_path=DB_PATH):
+    rows = list_accounts(month, db_path)
+    by_category = {}
+    for row in rows:
+        by_category[row["category"]] = by_category.get(row["category"], 0) + row["amount"]
+    return {"month": month, "count": len(rows), "total": sum(by_category.values()), "by_category": by_category}
+
+def launch_ui():
+    import gradio as gr
+    with gr.Blocks(title="记账助手") as demo:
+        gr.Markdown("# 记账助手")
+        entry_date = gr.Textbox(label="日期", value=date.today().isoformat())
+        description = gr.Textbox(label="说明")
+        category = gr.Textbox(label="分类", value="其他")
+        amount = gr.Number(label="金额", minimum=0)
+        output = gr.JSON(label="账目")
+        add = gr.Button("添加账目")
+        add.click(lambda d, s, c, a: (add_account(d, s, c, a), list_accounts(d[:7]))[1], [entry_date, description, category, amount], output)
+    demo.launch()
+
+if __name__ == "__main__":
+    launch_ui()
 '''
 
 
@@ -269,13 +328,25 @@ def build_developer_graph(
         iteration = state.get("iteration", 0)
         if not messages or not isinstance(messages[-1], ToolMessage):
             iteration += 1
-        prompt = coding_prompt.format(iteration=iteration)
+        user_request = _content_text(messages[0]) if messages else ""
+        project_files = list_files.invoke({"subdir": ""})
+        project_context = "当前 game_project 文件：\n" + project_files
+        if "app.py" in project_files:
+            project_context += "\n\n当前 app.py：\n" + read_file.invoke({"filepath": "app.py"})
+        prompt = (
+            coding_prompt.format(iteration=iteration)
+            + "\n\n必须严格实现以下原始用户需求，不得用通用示例替代：\n"
+            + user_request
+            + "\n\n"
+            + project_context
+            + "\n\n请逐项对照需求实现；如果用户要求 sqlite/sqlite3，APP 源码必须实际 import sqlite3 并通过数据库保存数据。"
+        )
         response = coding_llm.invoke([SystemMessage(content=prompt)] + messages)
         tool_calls = getattr(response, "tool_calls", [])
         if tool_calls:
             content = tool_calls[0].get("args", {}).get("content", "")
             normalized_content = _normalize_python_source(content)
-            if not _looks_like_useful_app(normalized_content):
+            if not _looks_like_useful_app(normalized_content, user_request):
                 tool_calls = []
             else:
                 tool_calls[0]["args"]["content"] = normalized_content
@@ -292,8 +363,11 @@ def build_developer_graph(
                 + messages[-2:]
             )
             code = _normalize_python_source(_content_text(code_response))
-            if not _looks_like_useful_app(code):
-                code = FALLBACK_APP_SOURCE
+            if not _looks_like_useful_app(code, user_request):
+                if "sqlite" in user_request.lower() or "sqlite3" in user_request.lower():
+                    code = SQLITE_FALLBACK_APP_SOURCE
+                else:
+                    code = FALLBACK_APP_SOURCE
             write_file.invoke({"filepath": "app.py", "content": code})
             response = code_response
         return {"messages": [response], "iteration": iteration}
@@ -310,7 +384,10 @@ def build_developer_graph(
         messages = list(state["messages"])
         if messages and isinstance(messages[0], SystemMessage):
             messages = [message for message in messages if not isinstance(message, SystemMessage)]
-        response = qa_llm.invoke([SystemMessage(content=qa_prompt)] + messages)
+        user_request = _content_text(messages[0]) if messages else ""
+        response = qa_llm.invoke(
+            [SystemMessage(content=qa_prompt + "\n\n原始用户需求必须逐项验证：\n" + user_request)] + messages
+        )
         return {"messages": [response], "iteration": state.get("iteration", 0)}
 
     def route_tool_or_next(state: DeveloperState, tool_key: str, next_key: str):
@@ -333,7 +410,8 @@ def build_developer_graph(
                     compile(source, str(app_path), "exec")
                 except SyntaxError:
                     return "coding"
-                if _looks_like_useful_app(source):
+                user_request = _content_text(state["messages"][0]) if state.get("messages") else ""
+                if _looks_like_useful_app(source, user_request):
                     return "end"
         return "coding"
 

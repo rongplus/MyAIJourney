@@ -1,58 +1,121 @@
 import sqlite3
-from datetime import date
-from pathlib import Path
+from datetime import datetime
+from gradio import Interface, Input, Button, Textbox, Markdown, outputs, Column
 
-DB_PATH = Path(__file__).with_name("account_book.db")
+app_title = "简易记账应用"
 
-def connect_db(db_path=DB_PATH):
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, entry_date TEXT NOT NULL, description TEXT NOT NULL, category TEXT NOT NULL, amount REAL NOT NULL CHECK(amount >= 0))")
-    connection.commit()
-    return connection
+def create_db_connection(db_path):
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+    except sqlite3.Error as e:
+        print(e)
+    return conn
 
-def add_account(entry_date, description, category, amount, db_path=DB_PATH):
-    date.fromisoformat(entry_date)
-    amount = float(amount)
-    if not description.strip() or amount < 0:
-        raise ValueError("description is required and amount must be non-negative")
-    with connect_db(db_path) as connection:
-        cursor = connection.execute("INSERT INTO accounts(entry_date, description, category, amount) VALUES (?, ?, ?, ?)", (entry_date, description.strip(), category.strip() or "其他", amount))
-    return cursor.lastrowid
+def init_db(conn):
+    with conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY,
+                date TEXT,
+                description TEXT,
+                amount REAL
+            )
+        ''')
 
-def delete_account(account_id, db_path=DB_PATH):
-    with connect_db(db_path) as connection:
-        cursor = connection.execute("DELETE FROM accounts WHERE id = ?", (int(account_id),))
-    return cursor.rowcount == 1
+def add_account(conn, date, description, amount):
+    sql = ''' INSERT INTO accounts(date, description, amount)
+              VALUES(?,?,?) '''
+    cur = conn.cursor()
+    cur.execute(sql, (date, description, amount))
+    return cur.lastrowid
 
-def list_accounts(month=None, db_path=DB_PATH):
-    with connect_db(db_path) as connection:
-        query = "SELECT * FROM accounts ORDER BY entry_date, id"
-        params = ()
-        if month:
-            query = "SELECT * FROM accounts WHERE entry_date LIKE ? ORDER BY entry_date, id"
-            params = (f"{month}%",)
-        return [dict(row) for row in connection.execute(query, params).fetchall()]
+def delete_account(conn, id):
+    sql = 'DELETE FROM accounts WHERE id=?'
+    cur = conn.cursor()
+    cur.execute(sql, (id,))
 
-def monthly_report(month, db_path=DB_PATH):
-    rows = list_accounts(month, db_path)
-    by_category = {}
-    for row in rows:
-        by_category[row["category"]] = by_category.get(row["category"], 0) + row["amount"]
-    return {"month": month, "count": len(rows), "total": sum(by_category.values()), "by_category": by_category}
+def get_accounts(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accounts")
+    rows = cur.fetchall()
+    return rows
 
-def launch_ui():
-    import gradio as gr
-    with gr.Blocks(title="记账助手") as demo:
-        gr.Markdown("# 记账助手")
-        entry_date = gr.Textbox(label="日期", value=date.today().isoformat())
-        description = gr.Textbox(label="说明")
-        category = gr.Textbox(label="分类", value="其他")
-        amount = gr.Number(label="金额", minimum=0)
-        output = gr.JSON(label="账目")
-        add = gr.Button("添加账目")
-        add.click(lambda d, s, c, a: (add_account(d, s, c, a), list_accounts(d[:7]))[1], [entry_date, description, category, amount], output)
-    demo.launch()
+def generate_monthly_report(conn, month, year):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accounts WHERE strftime('%Y-%m', date) = ?", (f'{year}-{month:02}',))
+    rows = cur.fetchall()
+    total = sum(row[3] for row in rows)
+    return f"月度报表：{month}/{year}\n总收入：{total}"
+
+def main():
+    db_path = "accounts.db"
+    conn = create_db_connection(db_path)
+    init_db(conn)
+
+    def add_account_callback(date, description, amount):
+        add_account(conn, date, description, amount)
+        return "账目已添加"
+
+    def delete_account_callback(id):
+        delete_account(conn, id)
+        return "账目已删除"
+
+    def get_accounts_callback():
+        rows = get_accounts(conn)
+        return rows
+
+    def generate_report_callback(month, year):
+        return generate_monthly_report(conn, month, year)
+
+    def on_close():
+        conn.close()
+
+    with Interface(
+        title=app_title,
+        description="简易记账应用",
+        layout="vertical",
+        css="body { background-color: #f0f0f0; }",
+        examples=[],
+    ) as iface:
+        with Column():
+            date_input = Input(type="date", label="日期", placeholder="选择日期")
+            description_input = Input(type="text", label="说明", placeholder="输入说明")
+            amount_input = Input(type="number", label="金额", placeholder="输入金额")
+            add_button = Button("添加账目")
+            add_button.click(
+                fn=add_account_callback,
+                inputs=[date_input, description_input, amount_input],
+                outputs=Textbox()
+            )
+
+            with Column():
+                id_input = Input(type="number", label="账目ID", placeholder="输入ID")
+                delete_button = Button("删除账目")
+                delete_button.click(
+                    fn=delete_account_callback,
+                    inputs=[id_input],
+                    outputs=Textbox()
+                )
+
+            with Column():
+                get_button = Button("查看账目")
+                get_button.click(
+                    fn=get_accounts_callback,
+                    outputs=outputs.DataFrame()
+                )
+
+            with Column():
+                month_input = Input(type="number", label="月份", placeholder="输入月份")
+                year_input = Input(type="number", label="年份", placeholder="输入年份")
+                report_button = Button("生成月度报表")
+                report_button.click(
+                    fn=generate_report_callback,
+                    inputs=[month_input, year_input],
+                    outputs=Textbox()
+                )
+
+        iface.launch()
 
 if __name__ == "__main__":
-    launch_ui()
+    main()

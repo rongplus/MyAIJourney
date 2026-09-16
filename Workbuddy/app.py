@@ -8,6 +8,7 @@ from url_client import list_models, respond_url
 
 from myclient import get_default_model, getClient
 from localChatOllama import localChatOllama
+from autogenGame import AutoGenGameClient
 
 
 current_client = getClient(
@@ -17,6 +18,7 @@ current_client = getClient(
     "ollamaAI_memory.json",
     ["download_pdf_text"],
 )
+game_client = AutoGenGameClient()
 
 # Response the user input
 def userInput(user_input, history):
@@ -33,6 +35,11 @@ def toolChanged(tool_selections):
 
 def specialChanged(backend, model, temperature):
     global current_client
+    if backend == "Game专家":
+        current_client = game_client
+        log("切换聊天 client: Game专家")
+        return None
+
     model = model or ("llama3.2-vision:latest" if backend == "OpenAI" else "qwen2.5:7b")
     temperature = temperature if temperature is not None else 0.7
     memory_file = "openAI_memory.json" if backend == "OpenAI" else "ollamaAI_memory.json"
