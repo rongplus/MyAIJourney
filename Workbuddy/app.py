@@ -9,6 +9,8 @@ from url_client import list_models, respond_url
 from myclient import get_default_model, getClient
 from localChatOllama import localChatOllama
 from autogenGame import AutoGenGameClient
+from crewaiAgent import CrewAIClient
+from ragAgent import RAGClient
 
 
 current_client = getClient(
@@ -19,6 +21,8 @@ current_client = getClient(
     ["download_pdf_text"],
 )
 game_client = AutoGenGameClient()
+crewai_client = CrewAIClient()
+rag_client = RAGClient()
 
 # Response the user input
 def userInput(user_input, history):
@@ -35,9 +39,17 @@ def toolChanged(tool_selections):
 
 def specialChanged(backend, model, temperature):
     global current_client
-    if backend == "Game专家":
+    if backend == "autoGenGame专家":
         current_client = game_client
-        log("切换聊天 client: Game专家")
+        log("切换聊天 client: autoGenGame专家")
+        return None
+    if backend == "CrewAI专家":
+        current_client = crewai_client
+        log("切换聊天 client: CrewAI专家")
+        return None
+    if backend == "RAG专家":
+        current_client = rag_client
+        log("切换聊天 client: RAG专家")
         return None
 
     model = model or ("llama3.2-vision:latest" if backend == "OpenAI" else "qwen2.5:7b")
@@ -96,7 +108,8 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                 gr.Markdown("### ⚙️ 设置")
 
                 tool_selections = gr.CheckboxGroup(
-                                choices=['Get Weather', 'Safe Path', 'Read File', 'Write File', 'List Files'],
+                                choices=['Get Weather', 'Safe Path', 'Read File', 'Write File', 'List Files',"GMail","Outlook","PDF","Text2Video","Photo Generator",
+                                         "Wechat","Weibo","Twitter","Facebook","Instagram","YouTube","TikTok","LinkedIn"],
                                 value=[],
                                 label="Tools",
                             )
@@ -104,7 +117,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                 
 
                 special_selector = gr.Radio(
-                        choices=["Ollama", "OpenAI" ,"Game专家"],
+                        choices=["Ollama", "OpenAI", "autoGenGame专家", "CrewAI专家", "RAG专家"],
                     value="Ollama",
                     label="专家",
                     )
