@@ -30,3 +30,7 @@ This repository is designed to build my own AI knowledge system through a closed
   - Step 4: Add MCP
 
 # project 3
+
+    ![Ollama](./mcp.png)
+    ![OpenAI](./coding.png)
+    ![GMail](./gmail.png)
