@@ -8,7 +8,8 @@ This repository is designed to build my own AI knowledge system through a closed
     + write file
     + read file
     + gmail
-
+    
+    #-----
     ![Ollama](./mcp.png)
     ![OpenAI](./coding.png)
     ![GMail](./gmail.png)
