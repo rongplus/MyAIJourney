@@ -6,9 +6,11 @@ server's SSE endpoint on localhost:8001.
 
 import argparse
 import asyncio
+import json
 from typing import Any
 
 from fastmcp import Client
+from openai import OpenAI
 
 
 class TaskMCPClient:
@@ -20,6 +22,10 @@ class TaskMCPClient:
     async def list_tools(self) -> list[Any]:
         async with Client(self.server_url) as client:
             return await client.list_tools()
+
+    async def call_tool_by_name(self, name: str, arguments: dict[str, Any]) -> Any:
+        async with Client(self.server_url) as client:
+            return await client.call_tool(name, arguments)
 
     async def add_task(self, title: str, description: str = "") -> Any:
         async with Client(self.server_url) as client:
@@ -56,6 +62,83 @@ class TaskMCPClient:
         )
         print("Added task:", result)
         print("\nAll tasks:\n", await self.get_tasks())
+
+
+class MCPChatClient:
+    """Use an Ollama-compatible model to select and call remote MCP tools."""
+
+    def __init__(self, server_url: str, model_name: str = "qwen2.5:7b"):
+        self.server_url = server_url
+        self.model_name = model_name
+        self.llm = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+
+    def _tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": getattr(tool, "input_schema", None)
+                    or getattr(tool, "inputSchema", None)
+                    or {"type": "object", "properties": {}},
+                },
+            }
+            for tool in tools
+        ]
+
+    def _tool_result_text(self, result: Any) -> str:
+        if hasattr(result, "content"):
+            return "\n".join(
+                str(item.text) if hasattr(item, "text") else str(item)
+                for item in result.content
+            )
+        return str(result)
+
+    def streamChat(self, user_input, history, model, temperature, top_p, conversation_id):
+        messages = [
+            {"role": item["role"], "content": str(item.get("content") or "")}
+            for item in (history or [])
+            if isinstance(item, dict) and item.get("role") in {"user", "assistant"}
+        ]
+        messages.append({"role": "user", "content": user_input})
+        display_history = messages + [{"role": "assistant", "content": ""}]
+        yield display_history, ""
+
+        try:
+            tools = asyncio.run(TaskMCPClient(self.server_url).list_tools())
+            while True:
+                response = self.llm.chat.completions.create(
+                    model=model or self.model_name,
+                    messages=messages,
+                    temperature=temperature if temperature is not None else 0.7,
+                    top_p=top_p,
+                    tools=self._tool_schemas(tools),
+                    stream=False,
+                )
+                message = response.choices[0].message
+                tool_calls = message.tool_calls or []
+                if not tool_calls:
+                    display_history[-1]["content"] = message.content or ""
+                    yield display_history, ""
+                    break
+
+                messages.append(message.model_dump(exclude_none=True))
+                for tool_call in tool_calls:
+                    arguments = json.loads(tool_call.function.arguments or "{}")
+                    result = asyncio.run(
+                        TaskMCPClient(self.server_url).call_tool_by_name(
+                            tool_call.function.name, arguments
+                        )
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": self._tool_result_text(result),
+                    })
+        except Exception as error:
+            display_history[-1]["content"] = f"❌ MCP 调用失败：{error}"
+            yield display_history, ""
 
 
 async def main() -> None:

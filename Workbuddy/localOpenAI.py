@@ -5,7 +5,7 @@ from pathlib import Path
 from langchain_core.tools import StructuredTool
 from rongtools import get_weather, safe_path, read_file, write_file, list_files, TOOLS
 
-MODEL = "llama3.2-vision:latest"
+MODEL = "llama3.2:3b-instruct-fp16"
 
 
 class localOpenAIClient:

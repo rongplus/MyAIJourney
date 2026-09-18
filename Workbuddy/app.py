@@ -1,4 +1,5 @@
 import gradio as gr
+import asyncio
 
 from ronglog import log
 
@@ -11,6 +12,8 @@ from localChatOllama import localChatOllama
 from autogenGame import AutoGenGameClient
 from crewaiAgent import CrewAIClient
 from ragAgent import RAGClient
+from mcpServer.client import MCPChatClient, TaskMCPClient
+from mytool.gmail_listener import GmailAgent
 
 
 current_client = getClient(
@@ -23,6 +26,35 @@ current_client = getClient(
 game_client = AutoGenGameClient()
 crewai_client = CrewAIClient()
 rag_client = RAGClient()
+mcp_client = MCPChatClient("http://localhost:8001/sse")
+
+try:
+    gmail_agent = GmailAgent()
+except Exception:
+    gmail_agent = None
+
+
+def load_mcp_tools(server_url):
+    """Connect to an MCP server and format its available tools for the UI."""
+    server_url = (server_url or "").strip()
+    if not server_url:
+        return "请输入 MCP Server 地址。"
+
+    try:
+        tools = asyncio.run(TaskMCPClient(server_url).list_tools())
+    except Exception as exc:
+        log(f"MCP Server 连接失败: {exc}")
+        return f"**连接失败**：`{exc}`"
+
+    if not tools:
+        return "未发现可用的 MCP Tool。"
+
+    tool_lines = ["### 可用的 MCP Tools", ""]
+    for tool in tools:
+        name = getattr(tool, "name", "未命名工具")
+        description = getattr(tool, "description", None) or "无描述"
+        tool_lines.append(f"- **{name}**：{description}")
+    return "\n".join(tool_lines)
 
 # Response the user input
 def userInput(user_input, history):
@@ -37,22 +69,41 @@ def toolChanged(tool_selections):
     """记录用户选择的工具。"""
     log("Tool selection changed to: " + str(tool_selections or []))
 
-def specialChanged(backend, model, temperature):
-    global current_client
+def specialChanged(backend, model, temperature, server_url):
+    global current_client, mcp_client, gmail_agent
+    if backend == "mcp专家":
+        mcp_client = MCPChatClient(server_url or "http://localhost:8001/sse", model or "qwen2.5:7b")
+        current_client = mcp_client
+        log(f"切换聊天 client: MCP Server {mcp_client.server_url}")
+        return "MCP 专家已切换。"
+    if backend == "Gmail专家":
+        if gmail_agent is None:
+            try:
+                gmail_agent = GmailAgent()
+            except Exception as error:
+                msg = (
+                    "❌ Gmail 专家未能初始化。请先在当前环境中设置 GMAIL_EMAIL 和 GMAIL_APP_PASSWORD，"
+                    "再重新选择 Gmail 专家。"
+                )
+                log(f"GmailAgent 初始化失败：{error}")
+                return msg
+        current_client = gmail_agent
+        log("切换聊天 client: Gmail专家")
+        return "Gmail 专家已启用。"
     if backend == "autoGenGame专家":
         current_client = game_client
         log("切换聊天 client: autoGenGame专家")
-        return None
+        return "autoGenGame 专家已启用。"
     if backend == "CrewAI专家":
         current_client = crewai_client
         log("切换聊天 client: CrewAI专家")
-        return None
+        return "CrewAI 专家已启用。"
     if backend == "RAG专家":
         current_client = rag_client
         log("切换聊天 client: RAG专家")
-        return None
+        return "RAG 专家已启用。"
 
-    model = model or ("llama3.2-vision:latest" if backend == "OpenAI" else "qwen2.5:7b")
+    model = model or ("llama3.2:3b-instruct-fp16" if backend == "OpenAI" else "qwen2.5:7b")
     temperature = temperature if temperature is not None else 0.7
     memory_file = "openAI_memory.json" if backend == "OpenAI" else "ollamaAI_memory.json"
     current_client = getClient(
@@ -63,7 +114,7 @@ def specialChanged(backend, model, temperature):
         ["download_pdf_text", "get_weather"],
     )
     log(f"切换聊天 client: {backend}, model={model}")
-    return None
+    return f"{backend} 专家已启用。"
 
 def noChat(user_input_box, chatbot):
     user_input_box.submit(
@@ -104,7 +155,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
 
     with gr.Row():
             # ---- 侧边栏设置 ----
-            with gr.Column(scale=1, min_width=280):
+            with gr.Column(scale=1, min_width=400):
                 gr.Markdown("### ⚙️ 设置")
 
                 tool_selections = gr.CheckboxGroup(
@@ -113,11 +164,20 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                                 value=[],
                                 label="Tools",
                             )
+
+                gr.Markdown("### MCP Server")
+                mcp_server_url = gr.Textbox(
+                    value="http://localhost:8001/sse",
+                    label="Server 地址",
+                    placeholder="http://localhost:8001/sse",
+                )
+                mcp_connect_btn = gr.Button("🔌 连接并刷新 MCP Tools", variant="secondary")
+                mcp_tools_display = gr.Markdown("尚未连接 MCP Server。")
                 
                 
 
                 special_selector = gr.Radio(
-                        choices=["Ollama", "OpenAI", "autoGenGame专家", "CrewAI专家", "RAG专家"],
+                        choices=["Ollama", "OpenAI", "Gmail专家", "mcp专家", "autoGenGame专家", "CrewAI专家", "RAG专家"],
                     value="Ollama",
                     label="专家",
                     )
@@ -187,6 +247,11 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                                 buttons=["copy", "copy_all"],
                             )
                 task_status = gr.Markdown()
+                with gr.Row():
+                    copy_btn = gr.Button("📋 Copy")
+                    like_btn = gr.Button("👍 Like")
+                    dislike_btn = gr.Button("👎 Dislike")
+                    clear_btn = gr.Button("🗑️ Clear")
                 user_input_box = gr.Textbox(
                     placeholder="输入消息...",
                     show_label=False,
@@ -238,11 +303,49 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
             outputs=None
         )
 
+    mcp_connect_btn.click(
+        load_mcp_tools,
+        inputs=[mcp_server_url],
+        outputs=[mcp_tools_display],
+    )
+
     special_selector.change(
             specialChanged,
-            inputs=[special_selector, model_dropdown, temperature_slider],
-            outputs=None,
+            inputs=[special_selector, model_dropdown, temperature_slider, mcp_server_url],
+            outputs=[task_status],
         )
+
+    def copy_last_message(chatbot_history):
+        if not chatbot_history:
+            return "没有可复制的消息。"
+        for message in reversed(chatbot_history):
+            if isinstance(message, dict) and message.get("role") == "assistant":
+                return str(message.get("content", ""))
+        return str(chatbot_history[-1])
+
+    def clear_chat():
+        return [], ""
+
+    copy_btn.click(
+        copy_last_message,
+        inputs=[chatbot],
+        outputs=[task_status],
+    )
+    like_btn.click(
+        lambda: "👍 已标记为有用。",
+        inputs=None,
+        outputs=[task_status],
+    )
+    dislike_btn.click(
+        lambda: "👎 已标记为不满意。",
+        inputs=None,
+        outputs=[task_status],
+    )
+    clear_btn.click(
+        clear_chat,
+        inputs=None,
+        outputs=[chatbot, user_input_box],
+    )
 
 if __name__ == "__main__":
     demo.queue().launch(theme=gr.themes.Soft())

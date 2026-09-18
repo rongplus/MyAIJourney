@@ -1,8 +1,12 @@
 # local url
+from crewaiAgent import CrewAIClient
 from url_client import list_models, respond_url, chat_stream
 
 from localChatOllama import localChatOllama
 from localOpenAI import localOpenAIClient
+from ragAgent import RAGClient
+from autogenGame import AutoGenGameClient
+from mcpServer.client import MCPChatClient, TaskMCPClient
 
 def get_default_model(models: list[str]):
     if not models:
@@ -22,3 +26,18 @@ def getClient(special:str, modelName: str, temperature: float, memory_file: str,
     if special == "OpenAI":
         return getLocalOpenAIClient(modelName=modelName, temperature=temperature,memory_file="Default_memory.json",custom_tools=custom_tools)
     return getLocalOllamaClient(modelName=modelName, temperature=temperature,memory_file="Default_memory.json",custom_tools=custom_tools)
+
+
+def getCrewClient(special:str, modelName: str, temperature: float, memory_file: str,custom_tools: list[str]):
+   return CrewAIClient()
+
+
+def getRagClient(special:str, modelName: str, temperature: float, memory_file: str,custom_tools: list[str]):
+   return RAGClient()
+
+
+def getAutoGenGameClient(special:str, modelName: str, temperature: float, memory_file: str,custom_tools: list[str]):
+   return AutoGenGameClient()
+
+def getMCPClient(special:str, modelName: str, temperature: float, memory_file: str,custom_tools: list[str]):
+   return MCPChatClient("http://localhost:8001/sse")
