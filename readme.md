@@ -11,7 +11,7 @@ This repository is designed to build my own AI knowledge system through a closed
 
     ![Ollama](./mcp.png)
     ![OpenAI](./coding.png)
-    ![GMail](gmail.png)
+    ![GMail](./gmail.png)
 
     ## Added MCP
     + Add Server
