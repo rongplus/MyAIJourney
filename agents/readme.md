@@ -12,6 +12,7 @@
 | Router | [`Router.py`](Router.py) | 分类请求 → 进入一个专家分支 → 回答 | 分类器选择处理路径 |
 | Workflow | [`Workflow.py`](Workflow.py) | 分析 → 提纲 → 初稿 → 审查 → 定稿 | 预先定义的固定流程 |
 | Multi-Agent | [`Multi-Agent.PY`](Multi-Agent.PY) | 多个角色并行分析 → 编辑整合 | 预先定义角色与汇总方式 |
+| 项目交付 Agent | [`project_agent.py`](project_agent.py) | 需求分析 → 系统设计 → 代码生成 → QA → 失败修复迭代 | 固定阶段由 LangGraph 控制，QA 结果控制是否修复 |
 
 > `react.py` 的注释也提到了 Plan-and-Execute，但本目录目前没有对应的实现脚本。该模式会在后文简要说明。
 
@@ -220,3 +221,25 @@ Plan-and-Execute 通常先生成整体计划，再逐步执行计划中的任务
 - 可以通过 `OLLAMA_MODEL` 和 `OLLAMA_BASE_URL` 环境变量更换模型或服务地址。
 - 除 ReAct 示例使用预建 Agent 接口外，其余图式流程使用 LangGraph 的 `StateGraph`。
 - 示例重点是展示编排结构。实际部署还需要补充输入验证、错误与重试策略、日志、超时、权限控制、结构化输出，以及对模型输出的质量评估。
+
+## 项目交付 Agent
+
+[`project_agent.py`](project_agent.py) 将前面的模式组合成一个项目构建闭环：Workflow 固定阶段，需求分析和系统设计负责规划，代码生成与 Reflection 式 QA 修复负责迭代，最终以自动测试是否通过作为成功标准。
+
+```powershell
+python day9/project_agent.py "做一个命令行记账工具，支持收入支出、分类统计和 CSV 导出"
+```
+
+默认生成到当前目录下的 `generated_projects/`，每次在其中创建一个新的、带时间戳的项目目录。可通过 `--output-root` 指定父目录，通过 `--max-iterations` 设置 QA 轮数（1 到 8，默认 3）。模型仍使用 `OLLAMA_MODEL` 和 `OLLAMA_BASE_URL` 环境变量。
+
+首版支持 Python 3（标准库 + `unittest`）和原生 Node.js JavaScript（内置模块 + `node:test`）；Node.js 项目需要本机已安装 `node`。TypeScript、JSX、第三方依赖安装和其他语言暂不支持。Agent 使用固定测试命令，不执行模型提供的 shell 命令，并将测试超时限制为 60 秒。
+
+**安全边界：**输出项目目录是新建目录，不是操作系统沙箱。自动测试会以当前用户权限执行生成的测试代码；不要对不可信模型或不可信需求开启无人值守运行。若需在共享或生产环境使用，应在容器/虚拟机中运行 QA，并设置网络、文件系统、CPU、内存和进程权限限制。
+
+QA 未通过会将测试日志交给修复阶段，并只接受新增/更新的相对路径文件。若模型输出格式无法解析，Agent 会额外尝试一次格式转换，并在失败报告中保留回复片段。路径穿越会被拒绝；如果检测到用户在运行期间改动了 Agent 管理的文件，会停止覆盖。达到轮数上限后会保留项目目录和失败报告，供人工检查。
+
+工具本身的离线测试：
+
+```powershell
+python -m unittest tests.test_project_agent -v
+```
