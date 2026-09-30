@@ -1,4 +1,4 @@
-"""天气查询工具 — 使用 Open-Meteo 免费 API（无需 API Key）"""
+"""Weather query tool — uses the free Open-Meteo API (no API Key required)"""
 from asyncio.log import logger
 import os
 from pathlib import Path
@@ -12,7 +12,8 @@ try:
 except ImportError:
     from ronglog import log
 
-# 项目根目录固定在当前 Workbuddy 模块旁，避免随启动目录变化。
+# The project root directory is fixed next to the current Workbuddy module,
+# to avoid changing with the startup directory.
 PROJECT_ROOT = Path(__file__).resolve().parent / "game_project"
 
 def ensure_project_root():
@@ -22,29 +23,29 @@ def ensure_project_root():
 def get_weather(city: str) -> str:
     """get_weather
 
-    查询指定城市的当前天气情况，包括温度、湿度、天气状况和风速。
+    Query the current weather for a specified city, including temperature, humidity, weather condition, and wind speed.
 
     Args:
-        city: 城市名称（中英文均可），如 "北京"、"上海"、"Tokyo"
+        city: City name (Chinese or English), e.g. "Beijing", "Shanghai", "Tokyo"
     """
     try:
-        log(f"正在查询天气 for city: {city}")
-        # 1. 地理编码：城市名 -> 经纬度
+        log(f"Querying weather for city: {city}")
+        # 1. Geocoding: city name -> lat/lon
         geo_resp = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "zh"},
+            params={"name": city, "count": 1, "language": "en"},
             timeout=10,
         )
         geo_resp.raise_for_status()
         geo_data = geo_resp.json().get("results", [])
         if not geo_data:
-            return f"未找到城市「{city}」，请检查城市名称。"
+            return f"City '{city}' not found. Please check the city name."
 
         loc = geo_data[0]
         lat, lon = loc["latitude"], loc["longitude"]
         city_name = loc.get("name", city)
 
-        # 2. 天气查询
+        # 2. Weather query
         weather_resp = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
@@ -63,27 +64,27 @@ def get_weather(city: str) -> str:
         wind = current.get("wind_speed_10m", "?")
         code = current.get("weather_code", 0)
 
-        weather_desc = _WMO_CODES.get(code, "未知")
+        weather_desc = _WMO_CODES.get(code, "unknown")
 
-        return (f"{city_name}: {weather_desc}, {temp}°C, "
-                f"湿度 {humidity}%, 风速 {wind} m/s")
+        return (f"{city_name}: {weather_desc}, {temp}C, "
+                f"humidity {humidity}%, wind speed {wind} m/s")
     except requests.RequestException as e:
-        return f"天气查询失败：{e}"
+        return f"Weather query failed: {e}"
 
 
 # WMO Weather interpretation codes
 _WMO_CODES = {
-    0: "晴", 1: "晴", 2: "多云", 3: "阴",
-    45: "雾", 48: "雾凇",
-    51: "小雨", 53: "小雨", 55: "中雨",
-    56: "冻雨", 57: "冻雨",
-    61: "小雨", 63: "中雨", 65: "大雨",
-    66: "冻雨", 67: "冻雨",
-    71: "小雪", 73: "小雪", 75: "大雪",
-    77: "霰",
-    80: "阵雨", 81: "阵雨", 82: "暴雨",
-    85: "阵雪", 86: "阵雪",
-    95: "雷暴", 96: "雷暴", 99: "雷暴",
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Fog", 48: "Depositing rime fog",
+    51: "Light drizzle", 53: "Light drizzle", 55: "Moderate drizzle",
+    56: "Freezing drizzle", 57: "Freezing drizzle",
+    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+    66: "Freezing rain", 67: "Freezing rain",
+    71: "Slight snowfall", 73: "Slight snowfall", 75: "Heavy snowfall",
+    77: "Snow grains",
+    80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+    85: "Slight snow showers", 86: "Heavy snow showers",
+    95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
 }
 
 
@@ -91,9 +92,9 @@ _WMO_CODES = {
 def safe_path(filepath: str) -> Path:
     """safe_path
 
-    防止Agent访问项目目录之外的文件
+    Prevent the Agent from accessing files outside the project directory.
     """
-    log("正在启动safe_path...")
+    log("Starting safe_path...")
     ensure_project_root()
 
     full_path = (PROJECT_ROOT / filepath).resolve()
@@ -107,17 +108,17 @@ def safe_path(filepath: str) -> Path:
 def read_file(filepath: str) -> str:
     """read_file
 
-    读取项目文件
+    Read a project file.
 
     Args:
-        filepath: 相对路径，例如:
+        filepath: Relative path, e.g.:
             index.html
             js/player.js
 
     Returns:
-        文件内容
+        File content
     """
-    log("正在启动read_file...")
+    log("Starting read_file...")
     try:
         path = safe_path.invoke({"filepath": filepath})
 
@@ -134,16 +135,16 @@ def read_file(filepath: str) -> str:
 def write_file(filepath: str, content: str) -> str:
     """write_file
 
-    写入项目文件
+    Write to a project file.
 
     Args:
-        filepath: 相对路径
-        content: 文件内容
+        filepath: Relative path
+        content: File content
 
     Returns:
-        执行结果
+        Execution result
     """
-    log("正在启动write_file...")
+    log("Starting write_file...")
     log(f"[TOOL]Writing {filepath}")
     log(f"Content length: {len(content)}")
 
@@ -164,15 +165,15 @@ def write_file(filepath: str, content: str) -> str:
 def list_files(subdir: str = "") -> str:
     """list_files
     
-    列出项目目录文件
+    List files in the project directory.
 
     Args:
-        subdir: 子目录
+        subdir: Subdirectory
 
     Returns:
-        文件树
+        File tree
     """
-    log("正在启动list_files...")
+    log("Starting list_files...")
     try:
         root = safe_path.invoke({"filepath": subdir})
 
@@ -201,8 +202,8 @@ def list_files(subdir: str = "") -> str:
 
 @tool
 def run_python(code: str) -> str:
-    """在项目目录中执行一段 Python 代码并返回输出。"""
-    log("正在启动run_python...")
+    """Execute a snippet of Python code in the project directory and return the output."""
+    log("Starting run_python...")
     ensure_project_root()
     try:
         result = subprocess.run(

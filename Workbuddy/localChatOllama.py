@@ -13,7 +13,7 @@ from ronglog import log
 
 
 
-# Web 搜索（DuckDuckGo）
+# Web search (DuckDuckGo)
 from ddgs import DDGS
 
 def ddgs_search(q: str) -> str:
@@ -23,7 +23,7 @@ def ddgs_search(q: str) -> str:
             items.append(f"{it['title']} :: {it['href']} :: {it['body']}")
     return "\n".join(items)[:2000] or "no results"
 
-# 浏览器渲染（获取真实页面内容）
+# Browser rendering (fetch real page content)
 from playwright.sync_api import sync_playwright
 
 def browser_render(url: str) -> str:
@@ -36,7 +36,7 @@ def browser_render(url: str) -> str:
         context.close(); browser.close()
     return html[:4000]
 
-# HTTP 端点获取
+# HTTP endpoint fetch
 import requests
 
 def http_fetch(url: str) -> str:
@@ -44,7 +44,7 @@ def http_fetch(url: str) -> str:
     r.raise_for_status()
     return r.text[:2000]
 
-# PDF 文本提取（可选）
+# PDF text extraction (optional)
 import tempfile
 from pathlib import Path
 
@@ -72,7 +72,7 @@ tools = [
     StructuredTool.from_function(browser_render, name="browser_render", description="Render a webpage using headless Chromium and return HTML content."),
     StructuredTool.from_function(http_fetch, name="http_fetch", description="Fetch plain text or JSON from HTTP endpoints."),
     StructuredTool.from_function(download_pdf_text, name="download_pdf_text", description="Download a PDF file and extract its textual content."),
-    StructuredTool.from_function(get_weather, name="get_weather", description="当你需要查询天气的时候， 调用此函数."),
+    StructuredTool.from_function(get_weather, name="get_weather", description="Call this function when you need to query weather information."),
 ]
 
 
@@ -93,7 +93,7 @@ class localChatOllama:
             ]
             unknown_tools = [name for name in self.custom_tools if name not in available_tools]
             if unknown_tools:
-                log(f"忽略未注册的工具: {unknown_tools}")
+                log(f"Ignoring unregistered tools: {unknown_tools}")
         else:
             self.tools = tools
 
@@ -122,7 +122,7 @@ class localChatOllama:
 
 
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "你是一个基于本地知识库回答问题的 AI，请只根据以下内容回答：\n\n{context}"),
+            ("system", "You are an AI that answers questions based on a local knowledge base. Please answer only based on the following content:\n\n{context}"),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{question}")
         ])
@@ -233,7 +233,7 @@ class localChatOllama:
             history = self._append_current_user(history, user_input)
             history = history + [{
                 "role": "assistant",
-                "content": "❌ 未检测到可用的本地模型，请确认 Ollama 服务已启动，并确保已安装模型。",
+                "content": "No available local model detected. Please make sure the Ollama service is running and models are installed.",
             }]
             yield history, ""
             return
@@ -255,10 +255,11 @@ class localChatOllama:
                 history[-1]["content"] = full_response
                 yield history, ""
         except Exception as error:
-            history[-1]["content"] = f"❌ 本地模型调用失败：{error}"
+            history[-1]["content"] = f"Local model call failed: {error}"
             yield history, ""
 
         
+
         
 
 

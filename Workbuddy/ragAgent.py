@@ -124,12 +124,12 @@ class RAGClient:
         del model, temperature, top_p, conversation_id
         display_history = list(history or [])
         display_history.append({"role": "user", "content": user_input})
-        display_history.append({"role": "assistant", "content": "正在执行 RAG 检索..."})
+        display_history.append({"role": "assistant", "content": "Performing RAG retrieval..."})
         yield display_history, ""
         try:
             display_history[-1]["content"] = self.run(user_input)
         except Exception as error:
-            display_history[-1]["content"] = f"❌ RAG 调用失败：{error}"
+            display_history[-1]["content"] = f"RAG call failed: {error}"
         yield display_history, ""
 
 

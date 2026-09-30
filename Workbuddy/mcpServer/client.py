@@ -137,7 +137,7 @@ class MCPChatClient:
                         "content": self._tool_result_text(result),
                     })
         except Exception as error:
-            display_history[-1]["content"] = f"❌ MCP 调用失败：{error}"
+            display_history[-1]["content"] = f"MCP call failed: {error}"
             yield display_history, ""
 
 

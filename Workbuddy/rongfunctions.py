@@ -1,5 +1,5 @@
 # ==================================================
-# JSON helpers（模块级工具函数，不含状态）
+# JSON helpers (module-level utility functions, stateless)
 # ==================================================
 import json
 import os
@@ -49,14 +49,14 @@ def get_default_model(models: list[str]):
 
 
 def _to_text(content) -> str:
-    """把 Gradio Chatbot 消息里的 content 统一拍平成纯字符串。
+    """Flatten the content field from Gradio Chatbot messages into a plain string.
 
-    Gradio 6 的 Chatbot 组件在把历史消息回传给 Python 回调时，content
-    字段有时是 str，有时会被包装成内容片段列表（例如
-    [{"type": "text", "text": "..."}]，用于支持图片/文件等多模态消息）。
-    Ollama 的 /api/chat 接口只接受纯字符串，直接把 list 传过去会报
-    "cannot unmarshal array into ... content of type string"。这里做
-    统一转换，避免这个问题。
+    In Gradio 6, the Chatbot component sometimes wraps the content field as a
+    list of content fragments (e.g., [{"type": "text", "text": "..."}] for
+    multimodal messages) when passing history back to Python callbacks.
+    Ollama's /api/chat endpoint only accepts plain strings; passing a list
+    directly causes "cannot unmarshal array into ... content of type string".
+    This function unifies the conversion to avoid that issue.
     """
     if isinstance(content, str):
         return content
@@ -80,9 +80,9 @@ def change_agent(agent_type: str):
     return agent_type
 
 def modelChanged(model: str):
-    """记录用户选择的模型。"""
+    """Record the user's selected model."""
     log("Model changed to:" + str(model))
 
 def toolChanged(toolnames):
-    """记录用户选择的工具。"""
+    """Record the user's selected tools."""
     log("Tool selection changed to: " + str(toolnames or []))

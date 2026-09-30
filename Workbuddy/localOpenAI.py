@@ -13,7 +13,7 @@ class localOpenAIClient:
         self,
         modelName: str = MODEL,
         temperature: float = 0.7,
-        memory_file: str = "open AI_memory.json",
+        memory_file: str = "openAI_memory.json",
         custom_tools: list[str] | None = None,
     ):
         self.modelName = modelName
@@ -26,7 +26,7 @@ class localOpenAIClient:
         weather_tool = StructuredTool.from_function(
             get_weather,
             name="get_weather",
-            description="查询指定城市的当前天气，包括温度、湿度、天气状况和风速。",
+            description="Query the current weather for a specified city, including temperature, humidity, weather condition, and wind speed.",
         )
         available_tools = {tool.name: tool for tool in [weather_tool, *TOOLS]}
         selected_tools = [
@@ -44,7 +44,7 @@ class localOpenAIClient:
                 name for name in selected_tools if name not in available_tools
             ]
             if unknown_tools:
-                log(f"忽略未注册的工具: {unknown_tools}")
+                log(f"Ignoring unregistered tools: {unknown_tools}")
         else:
             self.tools = available_tools
 
@@ -65,14 +65,14 @@ class localOpenAIClient:
         tool_name = tool_call.function.name
         tool = self.tools.get(tool_name)
         if tool is None:
-            return f"未知工具：{tool_name}"
+            return f"Unknown tool: {tool_name}"
 
         try:
             arguments = json.loads(tool_call.function.arguments or "{}")
             return str(tool.invoke(arguments))
         except Exception as error:
-            log(f"工具 {tool_name} 调用失败：{error}")
-            return f"工具 {tool_name} 调用失败：{error}"
+            log(f"Tool {tool_name} call failed: {error}")
+            return f"Tool {tool_name} call failed: {error}"
 
     def _extract_text(self, value):
             # Extract text content from various types of values (str, dict, list).
@@ -201,7 +201,7 @@ class localOpenAIClient:
 
                 display_history[-1]["content"] = ""
         except Exception as error:
-            message = f"❌ OpenAI/Ollama 调用失败（模型：{model}）：{error}"
+            message = f"OpenAI/Ollama call failed (model: {model}): {error}"
             display_history[-1]["content"] = message
             yield display_history, ""
             return

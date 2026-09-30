@@ -72,7 +72,7 @@ while True:
 
     # Draw everything
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption(。Retro Shooter、)
+    pygame.display.set_caption("Retro Shooter")
     pygame.draw.rect(screen, (255, 0, 0), player)
     for enemy in enemies:
         pygame.draw.rect(screen, (0, 0, 255), enemy)

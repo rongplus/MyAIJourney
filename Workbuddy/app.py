@@ -38,70 +38,71 @@ def load_mcp_tools(server_url):
     """Connect to an MCP server and format its available tools for the UI."""
     server_url = (server_url or "").strip()
     if not server_url:
-        return "请输入 MCP Server 地址。"
+        return "Please enter an MCP Server URL."
 
     try:
         tools = asyncio.run(TaskMCPClient(server_url).list_tools())
     except Exception as exc:
-        log(f"MCP Server 连接失败: {exc}")
-        return f"**连接失败**：`{exc}`"
+        log(f"MCP Server connection failed: {exc}")
+        return f"**Connection failed**: `{exc}`"
 
     if not tools:
-        return "未发现可用的 MCP Tool。"
+        return "No MCP Tools found."
 
-    tool_lines = ["### 可用的 MCP Tools", ""]
+    tool_lines = ["### Available MCP Tools", ""]
     for tool in tools:
-        name = getattr(tool, "name", "未命名工具")
-        description = getattr(tool, "description", None) or "无描述"
-        tool_lines.append(f"- **{name}**：{description}")
+        name = getattr(tool, "name", "unnamed tool")
+        description = getattr(tool, "description", None) or "no description"
+        tool_lines.append(f"- **{name}**: {description}")
     return "\n".join(tool_lines)
 
 # Response the user input
 def userInput(user_input, history):
     history = history or []
-    #，该版本的 Chatbot 组件已完全移除了 type 参数，仅支持 messages 格式（即 {"role": "user", "content": "..."} 字典）。
-    history.append({"role": "user", "content": user_input}) 
+    # This version of the Chatbot component has removed the type parameter;
+    # it only supports the messages format (i.e., {"role": "user", "content": "..."} dicts).
+    history.append({"role": "user", "content": user_input})
     #Second is for return to the input box or user
     yield history, "Got it! Processing..."
 
 def toolChanged(tool_selections):
     # Update the selected tools based on user selection
-    """记录用户选择的工具。"""
+    """Record the user's selected tools."""
     log("Tool selection changed to: " + str(tool_selections or []))
 
 def specialChanged(backend, model, temperature, server_url):
     global current_client, mcp_client, gmail_agent
-    if backend == "mcp专家":
+    if backend == "MCP Expert":
         mcp_client = MCPChatClient(server_url or "http://localhost:8001/sse", model or "qwen2.5:7b")
         current_client = mcp_client
-        log(f"切换聊天 client: MCP Server {mcp_client.server_url}")
-        return "MCP 专家已切换。"
-    if backend == "Gmail专家":
+        log(f"Switching chat client: MCP Server {mcp_client.server_url}")
+        return "MCP Expert activated."
+    if backend == "Gmail Expert":
         if gmail_agent is None:
             try:
                 gmail_agent = GmailAgent()
             except Exception as error:
                 msg = (
-                    "❌ Gmail 专家未能初始化。请先在当前环境中设置 GMAIL_EMAIL 和 GMAIL_APP_PASSWORD，"
-                    "再重新选择 Gmail 专家。"
+                    "Failed to initialize Gmail Expert. Please set GMAIL_EMAIL and GMAIL_APP_PASSWORD "
+                    "in the current environment, then select Gmail Expert again."
                 )
-                log(f"GmailAgent 初始化失败：{error}")
+                log(f"GmailAgent initialization failed: {error}")
                 return msg
         current_client = gmail_agent
-        log("切换聊天 client: Gmail专家")
-        return "Gmail 专家已启用。"
-    if backend == "autoGenGame专家":
+        log("Switching chat client: Gmail Expert")
+        return "Gmail Expert activated."
+    if backend == "AutoGen Game Expert":
         current_client = game_client
-        log("切换聊天 client: autoGenGame专家")
-        return "autoGenGame 专家已启用。"
-    if backend == "CrewAI专家":
+        log("Switching chat client: AutoGen Game Expert")
+        return "AutoGen Game Expert activated."
+    if backend == "CrewAI Expert":
         current_client = crewai_client
-        log("切换聊天 client: CrewAI专家")
-        return "CrewAI 专家已启用。"
-    if backend == "RAG专家":
+        log("Switching chat client: CrewAI Expert")
+        return "CrewAI Expert activated."
+    if backend == "RAG Expert":
         current_client = rag_client
-        log("切换聊天 client: RAG专家")
-        return "RAG 专家已启用。"
+        log("Switching chat client: RAG Expert")
+        return "RAG Expert activated."
 
     model = model or ("llama3.2:3b-instruct-fp16" if backend == "OpenAI" else "qwen2.5:7b")
     temperature = temperature if temperature is not None else 0.7
@@ -113,8 +114,8 @@ def specialChanged(backend, model, temperature, server_url):
         memory_file,
         ["download_pdf_text", "get_weather"],
     )
-    log(f"切换聊天 client: {backend}, model={model}")
-    return f"{backend} 专家已启用。"
+    log(f"Switching chat client: {backend}, model={model}")
+    return f"{backend} Expert activated."
 
 def noChat(user_input_box, chatbot):
     user_input_box.submit(
@@ -130,7 +131,6 @@ def chatWithUrl(user_input_box, chatbot, model_dropdown, temperature_slider, top
         inputs=[user_input_box, chatbot, model_dropdown, temperature_slider, top_p_slider],
         outputs=[chatbot,user_input_box],
     )
-
 
 
 
@@ -151,12 +151,12 @@ def chatWithSelectedModel(user_input, history, model, temperature, top_p, backen
 ###### --------UI-------
 
 with gr.Blocks(title="Rong's Workbuddy") as demo:
-    gr.Markdown("# 🦙 Rong's Workbuddy")
+    gr.Markdown("# Workbuddy")
 
     with gr.Row():
-            # ---- 侧边栏设置 ----
+            # ---- Sidebar Settings ----
             with gr.Column(scale=1, min_width=400):
-                gr.Markdown("### ⚙️ 设置")
+                gr.Markdown("### Settings")
 
                 tool_selections = gr.CheckboxGroup(
                                 choices=['Get Weather', 'Safe Path', 'Read File', 'Write File', 'List Files',"GMail","Outlook","PDF","Text2Video","Photo Generator",
@@ -168,109 +168,109 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
                 gr.Markdown("### MCP Server")
                 mcp_server_url = gr.Textbox(
                     value="http://localhost:8001/sse",
-                    label="Server 地址",
+                    label="Server URL",
                     placeholder="http://localhost:8001/sse",
                 )
-                mcp_connect_btn = gr.Button("🔌 连接并刷新 MCP Tools", variant="secondary")
-                mcp_tools_display = gr.Markdown("尚未连接 MCP Server。")
-                
+                mcp_connect_btn = gr.Button("Connect & Refresh MCP Tools", variant="secondary")
+                mcp_tools_display = gr.Markdown("MCP Server not connected yet.")
                 
 
+
                 special_selector = gr.Radio(
-                        choices=["Ollama", "OpenAI", "Gmail专家", "mcp专家", "autoGenGame专家", "CrewAI专家", "RAG专家"],
+                        choices=["Ollama", "OpenAI", "Gmail Expert", "MCP Expert", "AutoGen Game Expert", "CrewAI Expert", "RAG Expert"],
                     value="Ollama",
-                    label="专家",
+                    label="Expert",
                     )
 
                 teams_selector = gr.Radio(
-                                    choices=["软件开发团队", "全域内容分发专家团" ,"用户体验架构师"],
+                                    choices=["Software Dev Team", "Content Distribution Team" ,"UX Architect Team"],
                                     value="Ollama",
-                                    label="团队",
+                                    label="Team",
                                     )
                                 
                 conversation_id = gr.Textbox(
                         value="default",
-                        label="对话 ID",
-                        info="重新打开时使用相同的 ID 继续对话",
+                        label="Conversation ID",
+                        info="Use the same ID to continue the conversation when reopened",
                     )
 
                 automations = gr.Textbox(
-                                        value="自动化任务",
-                                        label="自动化任务",
-                                        info="自动化任务",
+                                        value="Automation tasks",
+                                        label="Automation Tasks",
+                                        info="Automation tasks",
                                     )
-                llm_btn = gr.Button("⚙️ 本地模型设置", variant="secondary")    
-                # ---- Advance Setting 弹出面板（默认隐藏） ----
+                llm_btn = gr.Button("Local Model Settings", variant="secondary")    
+                # ---- Advanced Settings popup panel (hidden by default) ----
                 llm_panel = gr.Group(visible=False)
                 with llm_panel:
-                    gr.Markdown("### ⚙️ Local LLaMA 设置，保存后生效。")
+                    gr.Markdown("### Local LLaMA Settings (takes effect after saving)")
                     initial_models = list_models()
                     
                     model_dropdown = gr.Dropdown(
-                        label="选择模型",
+                        label="Select Model",
                         choices=initial_models,
                         value=get_default_model(initial_models),
                     )
                     if not initial_models:
                         gr.Markdown(
-                            "⚠️ 未检测到已安装的模型，请确认本机 Ollama 服务已启动，"
-                            "且已执行过 `ollama pull <模型名>`，再点击下方「刷新模型列表」。"
+                            "No installed models detected. Please make sure the local Ollama service is running, "
+                            "and that you have run `ollama pull <model_name>`, then click \"Refresh Model List\" below."
                         )
         
-                    temperature_slider = gr.State(0.7)   # 实际值，由弹窗写入
-                    top_p_slider = gr.State(0.9)          # 实际值，由弹窗写入
+                    temperature_slider = gr.State(0.7)   # Actual value, written from the popup
+                    top_p_slider = gr.State(0.9)          # Actual value, written from the popup
                     
     
                     adv_temperature = gr.Slider(
                         label="Temperature",
                         minimum=0.0, maximum=1.5, value=0.7, step=0.05,
-                        info="越高越有创造力，越低越确定保守",
+                        info="Higher = more creative, lower = more deterministic and conservative",
                     )
                     adv_top_p = gr.Slider(
                         label="Top-P",
                         minimum=0.1, maximum=1.0, value=0.9, step=0.05,
-                        info="核采样阈值，控制候选词范围",
+                        info="Nucleus sampling threshold, controls candidate word range",
                     )
     
                     with gr.Row():
-                        adv_reset_btn = gr.Button("↩️ 重置默认", variant="secondary")
-                        adv_save_btn = gr.Button("✅ 保存并关闭", variant="primary")
+                        adv_reset_btn = gr.Button("Reset to Default", variant="secondary")
+                        adv_save_btn = gr.Button("Save & Close", variant="primary")
                 
 
-            # ---- 聊天窗口 ----
+            # ---- Chat Window ----
 
             with gr.Column(scale=4, min_width=600):
-                gr.Markdown("### 💬 聊天窗口")
+                gr.Markdown("### Chat Window")
                 chatbot = gr.Chatbot(
-                                label="对话",
+                                label="Conversation",
                                 height=560,
                                 buttons=["copy", "copy_all"],
                             )
                 task_status = gr.Markdown()
                 with gr.Row():
-                    copy_btn = gr.Button("📋 Copy")
-                    like_btn = gr.Button("👍 Like")
-                    dislike_btn = gr.Button("👎 Dislike")
-                    clear_btn = gr.Button("🗑️ Clear")
+                    copy_btn = gr.Button("Copy")
+                    like_btn = gr.Button("Like")
+                    dislike_btn = gr.Button("Dislike")
+                    clear_btn = gr.Button("Clear")
                 user_input_box = gr.Textbox(
-                    placeholder="输入消息...",
+                    placeholder="Type a message...",
                     show_label=False,
                     lines=1,
                 )
-    # Advance Setting 弹窗：打开时从 State 读入当前值
+    # Advanced Settings popup: read current values from State when opening
     llm_btn.click(
         lambda t, p: (gr.update(visible=True), gr.update(value=t), gr.update(value=p)),
         inputs=[temperature_slider, top_p_slider],
         outputs=[llm_panel, adv_temperature, adv_top_p],
     )
-    # 保存：把弹窗里的值写回 State 并关闭面板
+    # Save: write the popup values back to State and close the panel
     adv_save_btn.click(
         lambda t, p: (gr.update(visible=False), t, p),
         inputs=[adv_temperature, adv_top_p],
         outputs=[llm_panel, temperature_slider, top_p_slider],
     )
     
-    # 重置默认
+    # Reset to default
     adv_reset_btn.click(
         lambda: (gr.update(value=0.7), gr.update(value=0.9)),
         inputs=None,
@@ -278,7 +278,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
     )
 
     
-    # 事件绑定: chat
+    # Event binding: chat
     """
     
     """
@@ -317,7 +317,7 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
 
     def copy_last_message(chatbot_history):
         if not chatbot_history:
-            return "没有可复制的消息。"
+            return "No message to copy."
         for message in reversed(chatbot_history):
             if isinstance(message, dict) and message.get("role") == "assistant":
                 return str(message.get("content", ""))
@@ -332,12 +332,12 @@ with gr.Blocks(title="Rong's Workbuddy") as demo:
         outputs=[task_status],
     )
     like_btn.click(
-        lambda: "👍 已标记为有用。",
+        lambda: "Marked as helpful.",
         inputs=None,
         outputs=[task_status],
     )
     dislike_btn.click(
-        lambda: "👎 已标记为不满意。",
+        lambda: "Marked as not helpful.",
         inputs=None,
         outputs=[task_status],
     )

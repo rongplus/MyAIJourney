@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workbuddy Agent API - Test Console</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; color: #333; height: 100vh; display: flex; }
+  /* Sidebar */
+  .sidebar { width: 320px; background: #1e1e2e; color: #cdd6f4; padding: 20px; overflow-y: auto; flex-shrink: 0; }
+  .sidebar h1 { font-size: 18px; margin-bottom: 20px; color: #89b4fa; }
+  .sidebar h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 16px 0 8px; color: #6c7086; }
+  .sidebar label { display: block; font-size: 12px; margin-bottom: 4px; color: #a6adc8; }
+  .sidebar select, .sidebar input, .sidebar textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #45475a; border-radius: 6px;
+    background: #313244; color: #cdd6f4; font-size: 13px; margin-bottom: 12px;
+  }
+  .sidebar button {
+    padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: 0.15s;
+  }
+  .btn-primary { background: #89b4fa; color: #1e1e2e; }
+  .btn-primary:hover { background: #74c7ec; }
+  .btn-secondary { background: #45475a; color: #cdd6f4; }
+  .btn-secondary:hover { background: #585b70; }
+  .btn-danger { background: #f38ba8; color: #1e1e2e; }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .status-box { padding: 10px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+  .status-ok { background: #1e3a2f; color: #a6e3a1; }
+  .status-err { background: #3a1e1e; color: #f38ba8; }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row input[type="range"] { flex: 1; }
+  .slider-val { font-size: 12px; color: #a6adc8; min-width: 30px; text-align: right; }
+
+  /* Chat area */
+  .chat-area { flex: 1; display: flex; flex-direction: column; height: 100vh; }
+  .chat-header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #e0e0e0; font-size: 14px; color: #666; }
+  .chat-header code { background: #e8e8e8; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: #89b4fa; color: #1e1e2e; }
+  .msg.assistant { align-self: flex-start; background: #fff; border: 1px solid #e0e0e0; }
+  .msg.system { align-self: center; background: transparent; color: #999; font-size: 12px; }
+  .msg.error { align-self: flex-start; background: #fde8e8; border: 1px solid #f38ba8; color: #c62828; }
+  .input-area { padding: 16px 20px; background: #fff; border-top: 1px solid #e0e0e0; display: flex; gap: 8px; }
+  .input-area textarea { flex: 1; padding: 10px 14px; border: 1px solid #d0d0d0; border-radius: 8px; font-size: 14px; resize: none; height: 44px; max-height: 120px; }
+  .input-area button { padding: 10px 20px; border: none; border-radius: 8px; background: #89b4fa; color: #1e1e2e; font-weight: 600; cursor: pointer; font-size: 14px; }
+  .input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .streaming-cursor::after { content: '▊'; animation: blink 1s infinite; color: #999; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<!-- Sidebar: Settings -->
+<div class="sidebar">
+  <h1>Workbuddy API Console</h1>
+
+  <h2>Health Check</h2>
+  <div class="btn-row">
+    <button class="btn-secondary" onclick="checkHealth()">Check Health</button>
+    <button class="btn-secondary" onclick="loadModels()">Load Models</button>
+  </div>
+  <div id="statusBox" class="status-box" style="display:none;"></div>
+
+  <h2>Backend</h2>
+  <label>Agent Backend</label>
+  <select id="backend" onchange="onBackendChange()">
+    <option value="Ollama">Ollama (ReAct + Tools)</option>
+    <option value="OpenAI">OpenAI (Function Calling)</option>
+    <option value="MCP Expert">MCP Expert</option>
+    <option value="AutoGen Game Expert">AutoGen Game Expert</option>
+    <option value="CrewAI Expert">CrewAI Expert</option>
+    <option value="RAG Expert">RAG Expert</option>
+    <option value="Gmail Expert">Gmail Expert</option>
+  </select>
+
+  <h2>Model</h2>
+  <label>Ollama Model</label>
+  <select id="model"><option value="">Loading...</option></select>
+
+  <label>MCP Server URL</label>
+  <input type="text" id="mcpUrl" value="http://localhost:8001/sse" />
+
+  <label>Conversation ID</label>
+  <input type="text" id="convId" value="default" />
+
+  <h2>Parameters</h2>
+  <label>Temperature <span id="tempVal" style="float:right;color:#a6adc8;">0.7</span></label>
+  <div class="slider-row">
+    <input type="range" id="temperature" min="0" max="1.5" step="0.05" value="0.7"
+           oninput="document.getElementById('tempVal').textContent=this.value" />
+  </div>
+
+  <label>Top-P <span id="topPVal" style="float:right;color:#a6adc8;">0.9</span></label>
+  <div class="slider-row">
+    <input type="range" id="topP" min="0.1" max="1.0" step="0.05" value="0.9"
+           oninput="document.getElementById('topPVal').textContent=this.value" />
+  </div>
+
+  <h2>Mode</h2>
+  <div class="btn-row">
+    <button class="btn-primary" id="modeStream" onclick="setMode(true)">Streaming (SSE)</button>
+    <button class="btn-secondary" id="modeFull" onclick="setMode(false)">Full Response</button>
+  </div>
+
+  <h2>Actions</h2>
+  <button class="btn-danger" onclick="clearChat()">Clear Conversation</button>
+</div>
+
+<!-- Chat area -->
+<div class="chat-area">
+  <div class="chat-header">
+    API Base: <code id="apiBase">http://localhost:8000</code> &nbsp;|&nbsp;
+    Mode: <code id="modeLabel">Streaming (SSE)</code> &nbsp;|&nbsp;
+    Backend: <code id="backendLabel">Ollama</code>
+  </div>
+  <div class="messages" id="messages">
+    <div class="msg system">Type a message below to chat with your agent. Make sure the API server is running: <code>python api.py</code></div>
+  </div>
+  <div class="input-area">
+    <textarea id="userInput" placeholder="Type a message..." onkeydown="handleKeyDown(event)"></textarea>
+    <button id="sendBtn" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script>
+const API_BASE = "http://localhost:8000";
+let useStreaming = true;
+let chatHistory = [];
+let isSending = false;
+
+// ---- Sidebar actions ----
+
+async function checkHealth() {
+  const box = document.getElementById("statusBox");
+  box.style.display = "block";
+  try {
+    const r = await fetch(`${API_BASE}/api/health`);
+    const d = await r.json();
+    box.className = "status-box " + (d.ollama_reachable ? "status-ok" : "status-err");
+    box.textContent = `API: ${d.status} | Ollama: ${d.ollama_reachable ? "reachable" : "not reachable"}`;
+  } catch (e) {
+    box.className = "status-box status-err";
+    box.textContent = `API unreachable: ${e.message}`;
+  }
+}
+
+async function loadModels() {
+  try {
+    const r = await fetch(`${API_BASE}/api/models`);
+    const d = await r.json();
+    const sel = document.getElementById("model");
+    sel.innerHTML = "";
+    if (d.models && d.models.length > 0) {
+      d.models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        if (m === "qwen2.5:7b") opt.selected = true;
+        sel.appendChild(opt);
+      });
+    } else {
+      sel.innerHTML = "<option value=''>No models found</option>";
+    }
+  } catch (e) {
+    console.error("Failed to load models:", e);
+  }
+}
+
+function onBackendChange() {
+  const backend = document.getElementById("backend").value;
+  document.getElementById("backendLabel").textContent = backend;
+  // Hide model selector for backends that don't use it
+  const usesModel = ["Ollama", "OpenAI", "MCP Expert"].includes(backend);
+  document.getElementById("model").disabled = !usesModel;
+}
+
+function setMode(streaming) {
+  useStreaming = streaming;
+  document.getElementById("modeLabel").textContent = streaming ? "Streaming (SSE)" : "Full Response";
+  document.getElementById("modeStream").className = streaming ? "btn-primary" : "btn-secondary";
+  document.getElementById("modeFull").className = streaming ? "btn-secondary" : "btn-primary";
+}
+
+// ---- Chat ----
+
+function addMessage(role, content) {
+  const div = document.createElement("div");
+  div.className = `msg ${role}`;
+  div.textContent = content;
+  document.getElementById("messages").appendChild(div);
+  div.scrollIntoView({ behavior: "smooth" });
+  return div;
+}
+
+function clearChat() {
+  chatHistory = [];
+  document.getElementById("messages").innerHTML = "";
+}
+
+function handleKeyDown(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function getRequestData() {
+  return {
+    message: document.getElementById("userInput").value.trim(),
+    history: chatHistory,
+    backend: document.getElementById("backend").value,
+    model: document.getElementById("model").value || null,
+    temperature: parseFloat(document.getElementById("temperature").value),
+    top_p: parseFloat(document.getElementById("topP").value),
+    conversation_id: document.getElementById("convId").value || "default",
+    mcp_server_url: document.getElementById("mcpUrl").value,
+  };
+}
+
+async function sendMessage() {
+  const input = document.getElementById("userInput");
+  const msg = input.value.trim();
+  if (!msg || isSending) return;
+
+  isSending = true;
+  document.getElementById("sendBtn").disabled = true;
+  input.value = "";
+
+  // Add user message
+  addMessage("user", msg);
+  chatHistory.push({ role: "user", content: msg });
+
+  // Add assistant placeholder
+  const assistantDiv = addMessage("assistant", "");
+  assistantDiv.classList.add("streaming-cursor");
+
+  const data = getRequestData();
+
+  try {
+    if (useStreaming) {
+      await streamChat(data, assistantDiv);
+    } else {
+      await fullChat(data, assistantDiv);
+    }
+  } catch (e) {
+    assistantDiv.classList.remove("streaming-cursor");
+    assistantDiv.className = "msg error";
+    assistantDiv.textContent = `Error: ${e.message}`;
+  } finally {
+    assistantDiv.classList.remove("streaming-cursor");
+    isSending = false;
+    document.getElementById("sendBtn").disabled = false;
+  }
+}
+
+async function fullChat(data, assistantDiv) {
+  const r = await fetch(`${API_BASE}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || `HTTP ${r.status}`);
+  }
+  const d = await r.json();
+  assistantDiv.textContent = d.response;
+  chatHistory.push({ role: "assistant", content: d.response });
+}
+
+async function streamChat(data, assistantDiv) {
+  const r = await fetch(`${API_BASE}/api/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || `HTTP ${r.status}`);
+  }
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullContent = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop(); // keep incomplete line
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const jsonStr = line.slice(6).trim();
+      if (!jsonStr) continue;
+      try {
+        const evt = JSON.parse(jsonStr);
+        if (evt.error) throw new Error(evt.error);
+        if (evt.delta) {
+          fullContent += evt.delta;
+          assistantDiv.textContent = fullContent;
+        }
+        if (evt.done) break;
+      } catch (e) {
+        if (e.message) console.error("Parse error:", e);
+      }
+    }
+  }
+
+  chatHistory.push({ role: "assistant", content: fullContent });
+}
+
+// ---- Init ----
+window.addEventListener("load", () => {
+  loadModels();
+  checkHealth();
+});
+</script>
+</body>
+</html>

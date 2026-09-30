@@ -1,7 +1,7 @@
-"""产品开发流水线 LangGraph。
+"""Product development pipeline using LangGraph.
 
-流程：需求分析与产品设计 -> Coding -> QA。
-QA 返回 FAIL 时重新进入 Coding，最多完成 10 次 Coding/QA 迭代。
+Flow: Requirements Analysis & Product Design -> Coding -> QA.
+When QA returns FAIL, re-enter Coding; complete at most 10 Coding/QA iterations.
 """
 
 import re
@@ -39,7 +39,7 @@ MAX_ITERATIONS = 10
 
 
 class DeveloperState(MessagesState):
-    """开发流水线状态；iteration 表示已经完成的 Coding 次数。"""
+    """Development pipeline state; iteration represents the number of completed Coding rounds."""
 
     iteration: int
 
@@ -90,12 +90,12 @@ def _normalize_python_source(source: str) -> str:
 
 def _progress_label(node_name: str, iteration: int) -> str:
     labels = {
-        "design": "需求分析与架构设计",
-        "coding": f"第 {iteration} 轮 Coding",
-        "coding_tools": "写入代码文件",
-        "qa": f"第 {iteration} 轮 QA 测试",
-        "qa_tools": "执行测试工具",
-        "qa_decision": "评估测试结果",
+        "design": "Requirements Analysis & Architecture Design",
+        "coding": f"Coding Round {iteration}",
+        "coding_tools": "Writing code files",
+        "qa": f"QA Testing Round {iteration}",
+        "qa_tools": "Executing test tools",
+        "qa_decision": "Evaluating test results",
     }
     return labels.get(node_name, node_name)
 
@@ -105,32 +105,32 @@ def _progress_detail(node_name: str, iteration: int, node_state: dict, result: d
     messages = node_state.get("messages") or []
     latest = _content_text(messages[-1]).strip() if messages else ""
     if node_name == "design":
-        return "需求分析 Agent 正在明确功能、数据结构和实现方案。"
+        return "The Requirements Analysis agent is clarifying features, data structures, and implementation approach."
     if node_name == "coding":
         if latest:
-            return f"Coding Agent 正在根据用户需求开发第 {iteration} 轮代码，目标文件是 game_project/app.py。"
-        return f"Coding Agent 正在开发第 {iteration} 轮代码。"
+            return f"The Coding agent is developing round {iteration} of code based on user requirements, target file is game_project/app.py."
+        return f"The Coding agent is developing round {iteration} of code."
     if node_name == "coding_tools":
-        return "Coding Agent 正在把实现写入项目文件，并准备验证。"
+        return "The Coding agent is writing the implementation to the project file and preparing for verification."
     if node_name == "qa":
-        if latest and ("FAIL" in latest.upper() or "失败" in latest):
+        if latest and ("FAIL" in latest.upper() or "failed" in latest.lower()):
             summary = " ".join(latest.split())
-            return f"QA 测试发现问题：{summary[:180]}"
-        return "QA Agent 正在检查核心功能、输入校验、数据持久化和测试结果。"
+            return f"QA testing found issues: {summary[:180]}"
+        return "The QA agent is checking core functionality, input validation, data persistence, and test results."
     if node_name == "qa_tools":
-        if latest and ("failed" in latest.lower() or "失败" in latest):
+        if latest and ("failed" in latest.lower() or "failed" in latest):
             summary = " ".join(latest.split())
-            return f"测试执行失败：{summary[:180]}，准备让 Coding 修复。"
+            return f"Test execution failed: {summary[:180]}, preparing to send back to Coding for fixes."
         if latest and "success" in latest.lower():
-            return "测试工具执行成功，QA Agent 正在继续检查结果。"
-        return "QA Agent 正在实际执行测试，确认程序是否能运行。"
+            return "Test tools executed successfully, the QA agent is continuing to check results."
+        return "The QA agent is executing tests to confirm whether the program runs correctly."
     if node_name == "qa_decision":
         qa_text = _content_text(result.get("messages", [])[-1]).upper() if result.get("messages") else ""
-        if "QA_STATUS: FAIL" in qa_text or "QA_STATUS：FAIL" in qa_text:
-            return "QA 发现问题，测试未通过，下一步返回 Coding 修复。"
-        if "QA_STATUS: PASS" in qa_text or "QA_STATUS：PASS" in qa_text:
-            return "QA 确认测试通过，准备结束本轮开发。"
-        return "系统正在根据 QA 结果决定继续修复还是结束。"
+        if "QA_STATUS: FAIL" in qa_text:
+            return "QA found issues, tests did not pass, next step is to return to Coding for fixes."
+        if "QA_STATUS: PASS" in qa_text:
+            return "QA confirmed tests passed, preparing to end this development round."
+        return "The system is deciding whether to continue fixing or end based on QA results."
     return _progress_label(node_name, iteration)
 
 
@@ -152,27 +152,27 @@ def render_accounts():
     return "\\n".join(
         f"{index}: {item['date']} | {item['description']} | {item['amount']:.2f}"
         for index, item in enumerate(accounts)
-    ) or "暂无账目"
+    ) or "No entries yet"
 
 def monthly_report(month):
     selected = [item for item in accounts if item["date"].startswith(month)]
     total = sum(item["amount"] for item in selected)
-    return f"{month}: {len(selected)} 笔，合计 {total:.2f}\\n" + "\\n".join(
+    return f"{month}: {len(selected)} entries, total {total:.2f}\\n" + "\\n".join(
         f"{item['date']} | {item['description']} | {item['amount']:.2f}" for item in selected
     )
 
 with gr.Blocks() as demo:
-    gr.Markdown("# 记账应用")
+    gr.Markdown("# Accounting App")
     with gr.Row():
-        date = gr.Textbox(label="日期", value=datetime.now().strftime("%Y-%m-%d"))
-        description = gr.Textbox(label="说明")
-        amount = gr.Number(label="金额")
-        add = gr.Button("添加")
-    entries = gr.Textbox(label="账目", lines=8)
-    index = gr.Number(label="删除序号", precision=0)
-    delete = gr.Button("删除")
-    month = gr.Textbox(label="月份", value=datetime.now().strftime("%Y-%m"))
-    report = gr.Textbox(label="月度报表", lines=8)
+        date = gr.Textbox(label="Date", value=datetime.now().strftime("%Y-%m-%d"))
+        description = gr.Textbox(label="Description")
+        amount = gr.Number(label="Amount")
+        add = gr.Button("Add")
+    entries = gr.Textbox(label="Entries", lines=8)
+    index = gr.Number(label="Delete index", precision=0)
+    delete = gr.Button("Delete")
+    month = gr.Textbox(label="Month", value=datetime.now().strftime("%Y-%m"))
+    report = gr.Textbox(label="Monthly Report", lines=8)
     add.click(add_account, [date, description, amount], entries)
     delete.click(delete_account, index, entries)
     month.change(monthly_report, month, report)
@@ -201,7 +201,7 @@ def add_account(entry_date, description, category, amount, db_path=DB_PATH):
     if not description.strip() or amount < 0:
         raise ValueError("description is required and amount must be non-negative")
     with connect_db(db_path) as connection:
-        cursor = connection.execute("INSERT INTO accounts(entry_date, description, category, amount) VALUES (?, ?, ?, ?)", (entry_date, description.strip(), category.strip() or "其他", amount))
+        cursor = connection.execute("INSERT INTO accounts(entry_date, description, category, amount) VALUES (?, ?, ?, ?)", (entry_date, description.strip(), category.strip() or "Other", amount))
     return cursor.lastrowid
 
 def delete_account(account_id, db_path=DB_PATH):
@@ -227,14 +227,14 @@ def monthly_report(month, db_path=DB_PATH):
 
 def launch_ui():
     import gradio as gr
-    with gr.Blocks(title="记账助手") as demo:
-        gr.Markdown("# 记账助手")
-        entry_date = gr.Textbox(label="日期", value=date.today().isoformat())
-        description = gr.Textbox(label="说明")
-        category = gr.Textbox(label="分类", value="其他")
-        amount = gr.Number(label="金额", minimum=0)
-        output = gr.JSON(label="账目")
-        add = gr.Button("添加账目")
+    with gr.Blocks(title="Accounting Assistant") as demo:
+        gr.Markdown("# Accounting Assistant")
+        entry_date = gr.Textbox(label="Date", value=date.today().isoformat())
+        description = gr.Textbox(label="Description")
+        category = gr.Textbox(label="Category", value="Other")
+        amount = gr.Number(label="Amount", minimum=0)
+        output = gr.JSON(label="Entries")
+        add = gr.Button("Add Entry")
         add.click(lambda d, s, c, a: (add_account(d, s, c, a), list_accounts(d[:7]))[1], [entry_date, description, category, amount], output)
     demo.launch()
 
@@ -249,10 +249,11 @@ def build_developer_graph(
     top_p: float = 0.9,
     max_iterations: int = MAX_ITERATIONS,
 ):
-    """构建产品开发流水线图。
+    """Build the product development pipeline graph.
 
-    用户输入产品想法后，图会依次执行产品设计、Coding 和 QA。
-    QA 必须在最终文本中输出 ``QA_STATUS: PASS`` 或 ``QA_STATUS: FAIL``。
+    After the user inputs a product idea, the graph sequentially executes
+    product design, coding, and QA. QA must output ``QA_STATUS: PASS`` or
+    ``QA_STATUS: FAIL`` in the final text.
     """
     if not 1 <= max_iterations <= MAX_ITERATIONS:
         raise ValueError(f"max_iterations must be between 1 and {MAX_ITERATIONS}")
@@ -297,12 +298,13 @@ def build_developer_graph(
         return role_node
 
     coding_prompt = CODE_IMPLEMENTATION_PROMPT + (
-        "\n\n当前是第 {iteration} 次 Coding。请根据前面的产品设计和 QA 结果实现或修复代码。"
-        "必须实际调用 list_files/read_file 检查项目，并调用 write_file 将完整可运行代码写入"
-        " game_project/ 下的文件；不能只在回复中展示代码。"
-        "优先实现真正有用的最小产品：数据应持久化（优先 SQLite 或 JSON），"
-        "包含输入校验、错误处理、核心功能和可复现测试，不要生成只有回显功能的演示接口。"
-        "写入后再进行验证。"
+        "\n\nThis is Coding round {iteration}. Please implement or fix code based on the previous "
+        "product design and QA results. You must actually call list_files/read_file to check the project, "
+        "and call write_file to write complete runnable code to a file under game_project/. "
+        "Do not just display code in a reply. Prioritize implementing a genuinely useful minimal product: "
+        "data should be persisted (prefer SQLite or JSON), include input validation, error handling, "
+        "core functionality, and reproducible tests. Do not generate demo interfaces that only echo input. "
+        "Write the code first, then verify."
     )
 
     def design_node(state: DeveloperState):
@@ -314,7 +316,8 @@ def build_developer_graph(
                 PRODUCT_DESIGN_PROMPT
                 + "\n\n"
                 + ARCHITECTURE_DESIGN_PROMPT
-                + "\n\n请用不超过 300 字完成需求分析、功能列表和实现架构，随后立即交给 Coding。"
+                + "\n\nComplete requirements analysis, feature list, and implementation architecture in "
+                "no more than 300 words, then immediately hand off to Coding."
             )
         )
         response = design_llm.invoke([design_message] + messages)
@@ -330,16 +333,18 @@ def build_developer_graph(
             iteration += 1
         user_request = _content_text(messages[0]) if messages else ""
         project_files = list_files.invoke({"subdir": ""})
-        project_context = "当前 game_project 文件：\n" + project_files
+        project_context = "Current game_project files:\n" + project_files
         if "app.py" in project_files:
-            project_context += "\n\n当前 app.py：\n" + read_file.invoke({"filepath": "app.py"})
+            project_context += "\n\nCurrent app.py:\n" + read_file.invoke({"filepath": "app.py"})
         prompt = (
             coding_prompt.format(iteration=iteration)
-            + "\n\n必须严格实现以下原始用户需求，不得用通用示例替代：\n"
+            + "\n\nYou must strictly implement the following original user requirements; do not substitute "
+            "generic examples:\n"
             + user_request
             + "\n\n"
             + project_context
-            + "\n\n请逐项对照需求实现；如果用户要求 sqlite/sqlite3，APP 源码必须实际 import sqlite3 并通过数据库保存数据。"
+            + "\n\nPlease implement each requirement item by item; if the user requires sqlite/sqlite3, "
+            "the APP source code must actually import sqlite3 and persist data via the database."
         )
         response = coding_llm.invoke([SystemMessage(content=prompt)] + messages)
         tool_calls = getattr(response, "tool_calls", [])
@@ -355,8 +360,9 @@ def build_developer_graph(
                 [
                     SystemMessage(
                         content=(
-                            "只输出完整可运行的 Python 源代码，不要 Markdown、解释或代码围栏。"
-                            "实现用户需求，入口文件为 app.py。"
+                            "Only output complete runnable Python source code, no Markdown, "
+                            "explanations, or code fences. Implement the user requirements, "
+                            "entry file is app.py."
                         )
                     )
                 ]
@@ -373,11 +379,12 @@ def build_developer_graph(
         return {"messages": [response], "iteration": iteration}
 
     qa_prompt = QA_REVIEW_PROMPT + (
-        "\n\n审查结束时必须单独输出一行：QA_STATUS: PASS 或 QA_STATUS: FAIL。"
-        "只有所有关键问题都已解决且可用测试执行通过时才能输出 PASS。"
-        "请优先使用 list_files/read_file 找到测试或入口，再使用 run_python 实际执行测试。"
-        "必须验证核心功能、数据持久化和入口文件，而不是只做静态描述。"
-        "如果测试失败，必须输出失败命令、关键错误和明确修复建议，并输出 QA_STATUS: FAIL。"
+        "\n\nAt the end of the review, you must output a separate line: QA_STATUS: PASS or QA_STATUS: FAIL. "
+        "Only output PASS when all key issues are resolved and available tests pass. "
+        "Please use list_files/read_file to find tests or entry points first, then use run_python to "
+        "actually execute tests. You must verify core functionality, data persistence, and entry files, "
+        "not just do static descriptions. If tests fail, you must output the failed command, key errors, "
+        "and clear fix suggestions, and output QA_STATUS: FAIL."
     )
 
     def qa_node(state: DeveloperState):
@@ -386,7 +393,7 @@ def build_developer_graph(
             messages = [message for message in messages if not isinstance(message, SystemMessage)]
         user_request = _content_text(messages[0]) if messages else ""
         response = qa_llm.invoke(
-            [SystemMessage(content=qa_prompt + "\n\n原始用户需求必须逐项验证：\n" + user_request)] + messages
+            [SystemMessage(content=qa_prompt + "\n\nThe original user requirements must be verified item by item:\n" + user_request)] + messages
         )
         return {"messages": [response], "iteration": state.get("iteration", 0)}
 
@@ -402,7 +409,7 @@ def build_developer_graph(
             return "end"
 
         status_text = _content_text(state["messages"][-1]).upper()
-        if "QA_STATUS: PASS" in status_text or "QA_STATUS：PASS" in status_text:
+        if "QA_STATUS: PASS" in status_text:
             app_path = PROJECT_ROOT / "app.py"
             if app_path.exists():
                 source = app_path.read_text(encoding="utf-8")
@@ -462,7 +469,7 @@ def run_developer(
     verbose: bool = False,
     progress_callback=None,
 ):
-    """同步运行产品开发流水线并返回最终消息。"""
+    """Run the product development pipeline synchronously and return the final message."""
     graph = build_developer_graph(model, temperature, top_p, max_iterations)
     input_state = {
         "messages": [{"role": "user", "content": user_input}],
@@ -500,15 +507,17 @@ def run_developer(
 
 __all__ = ["DeveloperState", "build_developer_graph", "run_developer"]
 if __name__ == "__main__":
-    user_input = "请帮我设计一个简单的记账应用，要求支持添加、删除和查看账目，并且可以生成月度报表。" \
-    "用Python实现，前端使用gradio。所有代码必须可运行。需要的模块已经完全安装 好了, 不需要检查" \
-    "输入的数据用sqlite3保存, 需要有输入校验和错误处理, 入口文件为app.py。" \
-    "每次打开应用时都能看到之前的账目, 账目包括日期、说明和金额。请确保代码可运行, 并且包含必要的测试。"
+    user_input = "Please design a simple accounting application that supports adding, deleting, and viewing entries, " \
+    "and can generate monthly reports. Implement in Python with a Gradio frontend. All code must be runnable. " \
+    "Required modules are already installed, no need to check. Use sqlite3 to persist input data, " \
+    "include input validation and error handling, entry file is app.py. " \
+    "Previous entries should be visible when reopening the app. Entries include date, description, and amount. " \
+    "Please ensure the code is runnable and includes necessary tests."
     final_message = run_developer(
         user_input,
         model="qwen2.5:7b",
         max_iterations=3,
         verbose=True,
     )
-    print("\n=== 最终消息 ===")
+    print("\n=== Final Message ===")
     print(final_message)

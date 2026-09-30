@@ -206,7 +206,7 @@ class GmailAgent:
         del model, temperature, top_p, conversation_id
         display_history = list(history or [])
         display_history.append({"role": "user", "content": user_input})
-        display_history.append({"role": "assistant", "content": "正在检查 Gmail Primary inbox..."})
+        display_history.append({"role": "assistant", "content": "Checking Gmail Primary inbox..."})
         yield display_history, ""
 
         try:
@@ -214,7 +214,7 @@ class GmailAgent:
             try:
                 uids = self.fetch_unseen_uids() or self.fetch_recent_uids()
                 if not uids:
-                    result = "Inbox 里当前没有未读邮件，也没有最近 24 小时内的邮件。"
+                    result = "No unread emails in the inbox, and no emails from the last 24 hours."
                 else:
                     email_text = []
                     for uid in uids:
@@ -235,7 +235,7 @@ class GmailAgent:
                         break
 
                     if not email_text:
-                        result = "没有可读取的邮件内容。"
+                        result = "No readable email content."
                     else:
                         result = generate_summary("\n---\n".join(email_text[:1000]))
                 display_history[-1]["content"] = result
@@ -246,7 +246,7 @@ class GmailAgent:
                     except Exception:
                         pass
         except Exception as error:
-            display_history[-1]["content"] = f"❌ Gmail 专家调用失败：{error}"
+            display_history[-1]["content"] = f"Gmail expert call failed: {error}"
         yield display_history, ""
 
     def connect(self) -> None:
