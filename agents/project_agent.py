@@ -14,8 +14,9 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:latest")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 MAX_ITERATIONS_LIMIT = 8
 MAX_PROJECT_FILES = 100
 MAX_FILE_BYTES = 512_000
@@ -42,9 +43,24 @@ class ProjectAgentState(TypedDict):
 	status: str
 
 
+def strip_reasoning(text: str) -> str:
+	"""Remove  simd ... /think reasoning blocks produced by reasoning models like deepseek-r1."""
+	if not text:
+		return ""
+	cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+	cleaned = re.sub(r" simd.*? /think ", "", cleaned, flags=re.DOTALL)
+	if " simd " in cleaned:
+		cleaned = cleaned.split(" simd ")[0]
+	return cleaned.strip()
+
+
 def text_content(response) -> str:
-	content = response.content
-	return content if isinstance(content, str) else str(content)
+	content = getattr(response, "content", None)
+	if content is None:
+		additional = getattr(response, "additional_kwargs", {}) or {}
+		content = additional.get("thinking", "") or additional.get("content", "")
+	text = content if isinstance(content, str) else str(content)
+	return strip_reasoning(text)
 
 
 def build_model() -> ChatOllama:
@@ -52,6 +68,7 @@ def build_model() -> ChatOllama:
 		model=OLLAMA_MODEL,
 		base_url=OLLAMA_BASE_URL,
 		temperature=0,
+		sync_client_kwargs={"timeout": OLLAMA_TIMEOUT},
 	)
 
 
@@ -63,10 +80,12 @@ def ask_model(instructions: str, context: str) -> str:
 
 
 def parse_json_payload(text: str) -> dict:
-	"""Read a JSON object, tolerating a surrounding Markdown code fence."""
-	cleaned = text.strip()
-	if cleaned.startswith("```"):
-		cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.I)
+	"""Read a JSON object, tolerating a surrounding Markdown code fence and reasoning text."""
+	cleaned = strip_reasoning(text).strip()
+	# Remove markdown code fences at the start/end
+	cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.I)
+	cleaned = re.sub(r"\s*```\s*$", "", cleaned)
+	cleaned = cleaned.strip()
 	decoder = json.JSONDecoder()
 	for position, character in enumerate(cleaned):
 		if character != "{":
@@ -77,7 +96,7 @@ def parse_json_payload(text: str) -> dict:
 			continue
 		if isinstance(value, dict):
 			return value
-	raise ValueError("模型没有返回有效的 JSON 对象")
+	raise ValueError(f"模型没有返回有效的 JSON 对象{response_preview(text)}")
 
 
 def validate_relative_path(value: str) -> str:
@@ -268,24 +287,52 @@ def write_project_files(
 
 def requirements_analysis(state: ProjectAgentState) -> dict:
 	response = ask_model(
-		"你是资深产品分析师。分析用户需求并只返回 JSON 对象，字段为："
-		"analysis（中文功能分析，含用户、目标、功能边界和主要流程），"
-		"acceptance_criteria（可验证的验收条件字符串数组），"
+		"你是资深产品分析师。分析用户需求并只返回 JSON 对象，不要输出任何思维过程或解释。"
+		"JSON 字段为："
+		"analysis（必须是字符串，中文功能分析，含用户、目标、功能边界和主要流程），"
+		"acceptance_criteria（必须是字符串数组，可验证的验收条件），"
 		"language（只能是 python、javascript 或 unsupported）。"
 		"只选择 Python 或 JavaScript；用户明确要求其他语言时设为 unsupported。"
-		"用户没有指定语言时，根据需求在 Python 和 JavaScript 中选择一个。",
+		"用户没有指定语言时，根据需求在 Python 和 JavaScript 中选择一个。"
+		"注意：analysis 必须是字符串，不要嵌套对象。",
 		state["request"],
 	)
-	result = parse_json_payload(response)
+	try:
+		result = parse_json_payload(response)
+	except ValueError:
+		formatted = ask_model(
+			"你是 JSON 格式修复器。把输入内容提取为严格有效的 JSON 对象，"
+			"字段为：analysis（字符串）、acceptance_criteria（字符串数组）、language（字符串）。"
+			"只输出 JSON，不要解释，不要代码围栏。注意 analysis 必须是字符串，不能是嵌套对象。",
+			f"待修复的原始回复：\n{response[:12000]}",
+		)
+		result = parse_json_payload(formatted)
+
 	analysis = result.get("analysis")
 	criteria = result.get("acceptance_criteria")
-	language = str(result.get("language", "unsupported")).strip().lower()
-	if not isinstance(analysis, str) or not analysis.strip():
-		raise ValueError("需求分析结果缺少 analysis")
-	if not isinstance(criteria, list) or not all(isinstance(item, str) for item in criteria):
-		raise ValueError("需求分析结果中的 acceptance_criteria 格式无效")
+	language = result.get("language")
+
+	# Handle nested JSON where the model put everything inside "analysis"
+	if isinstance(analysis, dict):
+		if criteria is None:
+			criteria = analysis.get("acceptance_criteria")
+		if language is None:
+			language = analysis.get("language")
+		analysis = json.dumps(analysis, ensure_ascii=False)
+	elif isinstance(analysis, list):
+		analysis = "\n".join(str(item) for item in analysis)
+
+	if isinstance(criteria, list) and not all(isinstance(item, str) for item in criteria):
+		criteria = [str(item) for item in criteria]
+
+	language = str(language or "unsupported").strip().lower()
 	if language not in {"python", "javascript", "unsupported"}:
 		language = "unsupported"
+
+	if not isinstance(analysis, str) or not analysis.strip():
+		raise ValueError(f"需求分析结果缺少有效的 analysis 字段{response_preview(response)}")
+	if not isinstance(criteria, list) or not criteria:
+		raise ValueError(f"需求分析结果缺少有效的 acceptance_criteria 字段{response_preview(response)}")
 	print(f"[Analysis] target language: {language}")
 	return {
 		"analysis": analysis,
@@ -668,8 +715,8 @@ def main() -> int:
 		help="新项目的父目录；Agent 只会创建新的子目录",
 	)
 	parser.add_argument(
-		"--max-iterations", type=int, default=3,
-		help=f"最多 QA 轮数（1-{MAX_ITERATIONS_LIMIT}，默认 3）",
+		"--max-iterations", type=int, default=6,
+		help=f"最多 QA 轮数（1-{MAX_ITERATIONS_LIMIT}，默认 6）",
 	)
 	args = parser.parse_args()
 	print(f"模型：{OLLAMA_MODEL}")
